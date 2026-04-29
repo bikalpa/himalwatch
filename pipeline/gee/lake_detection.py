@@ -17,6 +17,7 @@ Outputs written to {output_dir}/{tile}/:
 
 import argparse
 import json
+import math
 import os
 import sys
 import uuid
@@ -26,6 +27,7 @@ from pathlib import Path
 import ee
 import geopandas as gpd
 import pandas as pd
+import requests
 from dotenv import load_dotenv
 from shapely.geometry import shape
 
@@ -42,11 +44,15 @@ load_dotenv()
 # Constants
 # ---------------------------------------------------------------------------
 
-NDWI_THRESHOLD  = 0.3    # McFeeters (1996)
-ELEV_MIN_M      = 3500   # Below this elevation → not a glacial lake
-MIN_AREA_SQM    = 10_000 # 1 hectare minimum
-SEASON_START_MM = "06-01"
-SEASON_END_MM   = "09-30"
+NDWI_THRESHOLD   = 0.3       # McFeeters (1996)
+ELEV_MIN_M       = 3500      # Below this elevation → not a glacial lake
+MIN_AREA_SQM     = 10_000    # 1 hectare minimum
+SEASON_START_MM  = "06-01"
+SEASON_END_MM    = "09-30"
+
+# Timeout-avoidance settings
+DETECT_SCALE_M   = 20        # 20m instead of 10m → 4× fewer pixels, same ha-scale accuracy
+MAX_STRIP_DEG    = 1.2       # Split tiles wider than this into longitude strips
 
 # ---------------------------------------------------------------------------
 # GEE authentication
@@ -73,6 +79,107 @@ def authenticate_gee(project: str):
 
 
 # ---------------------------------------------------------------------------
+# GEE download helpers (timeout-safe)
+# ---------------------------------------------------------------------------
+
+def _download_fc(fc: ee.FeatureCollection, label: str = "") -> gpd.GeoDataFrame:
+    """
+    Download a FeatureCollection to a GeoDataFrame without hitting the
+    5-minute synchronous getInfo() timeout.
+
+    Strategy:
+      1. Use fc.getDownloadURL(filetype='GEO_JSON') — GEE generates a
+         signed download URL asynchronously; we then fetch it with requests.
+         This sidesteps the getInfo() timeout entirely.
+      2. If that fails (e.g. too many features), fall back to geemap.ee_to_gdf()
+         which pages via getInfo().
+    """
+    try:
+        print(f"  [{label}] Requesting GEE download URL ...")
+        url = fc.getDownloadURL(filetype="GEO_JSON")
+        print(f"  [{label}] Downloading GeoJSON ...")
+        resp = requests.get(url, timeout=600)
+        resp.raise_for_status()
+        geojson = resp.json()
+        features = geojson.get("features") or []
+        if not features:
+            return gpd.GeoDataFrame()
+        gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+        print(f"  [{label}] Downloaded {len(gdf)} features via URL")
+        return gdf
+    except Exception as exc:
+        print(f"  [{label}] getDownloadURL failed ({exc}); falling back to geemap ...")
+        import geemap  # noqa: PLC0415
+        gdf = geemap.ee_to_gdf(fc)
+        print(f"  [{label}] Downloaded {len(gdf)} features via geemap")
+        return gdf
+
+
+def _detect_in_strip(
+    strip_bbox: tuple,
+    tile: str,
+    year: int,
+    composite,
+    dem,
+    ndwi,
+    ndsi,
+    start: str,
+    end: str,
+    strip_idx: int,
+) -> gpd.GeoDataFrame:
+    """
+    Run lake detection for one longitude strip of a tile.
+    Called once per strip; results are concatenated in detect_lakes().
+    """
+    aoi = ee.Geometry.Rectangle(strip_bbox)
+    label = f"{tile}/strip{strip_idx}"
+
+    water_mask = water_not_snow_mask(composite)
+    elev_mask  = dem.gt(ELEV_MIN_M)
+    final_mask = water_mask.And(elev_mask).selfMask()
+
+    print(f"  [{label}] Vectorising (scale={DETECT_SCALE_M}m) ...")
+    lakes_fc = final_mask.reduceToVectors(
+        geometry=aoi,
+        scale=DETECT_SCALE_M,
+        geometryType="polygon",
+        eightConnected=False,
+        maxPixels=1e9,
+        bestEffort=True,
+    )
+
+    # Filter by minimum area
+    lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
+    lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
+
+    # Simplify geometries to reduce transfer payload (~20m tolerance)
+    lakes_fc = lakes_fc.map(lambda f: f.setGeometry(f.geometry().simplify(DETECT_SCALE_M)))
+
+    # Add per-lake attributes
+    def add_attributes(f):
+        geom     = f.geometry()
+        centroid = geom.centroid(1).coordinates()
+        return f.set({
+            "centroid_lon":   centroid.get(0),
+            "centroid_lat":   centroid.get(1),
+            "mean_elevation": dem.reduceRegion(
+                ee.Reducer.mean(), geom, 30).get("elevation"),
+            "mean_ndwi":      ndwi.reduceRegion(
+                ee.Reducer.mean(), geom, DETECT_SCALE_M).get("NDWI"),
+            "mean_ndsi":      ndsi.reduceRegion(
+                ee.Reducer.mean(), geom, DETECT_SCALE_M).get("NDSI"),
+            "detection_year": year,
+            "season_start":   start,
+            "season_end":     end,
+            "tile":           tile,
+        })
+
+    lakes_fc = lakes_fc.map(add_attributes)
+
+    return _download_fc(lakes_fc, label=label)
+
+
+# ---------------------------------------------------------------------------
 # Detection
 # ---------------------------------------------------------------------------
 
@@ -83,74 +190,65 @@ def detect_lakes(tile: str, year: int) -> gpd.GeoDataFrame:
     Steps:
       1. Build cloud-free S2 composite for the tile/season
       2. Apply water + snow discrimination mask
-      3. Vectorise water pixels to polygons
-      4. Filter by elevation (>3500m) and minimum area (1ha)
-      5. Compute per-lake attributes
+      3. Split wide tiles into longitude strips (avoids GEE timeout)
+      4. Per strip: vectorise → filter by area → add attributes → download
+      5. Merge strips, derive columns
     """
     bbox = get_tile_bbox(tile)
-    aoi  = ee.Geometry.Rectangle(bbox)
+    min_lon, min_lat, max_lon, max_lat = bbox
 
     start = f"{year}-{SEASON_START_MM}"
     end   = f"{year}-{SEASON_END_MM}"
 
+    # Build composite once over the full tile AOI
+    full_aoi = ee.Geometry.Rectangle(bbox)
     print(f"[{tile}] Building S2 composite {start} -> {end} ...")
-    composite = prepare_s2_collection(aoi, start, end, composite_method="median")
-
-    # Water + snow discrimination mask
-    water_mask = water_not_snow_mask(composite)
-
-    # Apply elevation filter
-    dem       = ee.Image("USGS/SRTMGL1_003").select("elevation")
-    elev_mask = dem.gt(ELEV_MIN_M)
-    final_mask = water_mask.And(elev_mask).selfMask()
-
-    # Vectorise
-    print(f"[{tile}] Vectorising water mask ...")
-    lakes_fc = final_mask.reduceToVectors(
-        geometry=aoi,
-        scale=10,
-        geometryType="polygon",
-        eightConnected=False,
-        maxPixels=1e10,
-        bestEffort=True,
-    )
-
-    # Add area and filter minimum size
-    lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
-    lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
-
-    # Add per-lake attributes
+    composite = prepare_s2_collection(full_aoi, start, end, composite_method="median")
+    dem  = ee.Image("USGS/SRTMGL1_003").select("elevation")
     ndwi = composite.select("NDWI")
     ndsi = composite.select("NDSI")
 
-    def add_attributes(f):
-        geom     = f.geometry()
-        centroid = geom.centroid(1).coordinates()
-        return f.set({
-            "centroid_lon":   centroid.get(0),
-            "centroid_lat":   centroid.get(1),
-            "mean_elevation": dem.reduceRegion(ee.Reducer.mean(), geom, 30).get("elevation"),
-            "mean_ndwi":      ndwi.reduceRegion(ee.Reducer.mean(), geom, 10).get("NDWI"),
-            "mean_ndsi":      ndsi.reduceRegion(ee.Reducer.mean(), geom, 10).get("NDSI"),
-            "detection_year": year,
-            "season_start":   start,
-            "season_end":     end,
-            "tile":           tile,
-        })
+    # Split into longitude strips for wide tiles
+    tile_width = max_lon - min_lon
+    n_strips   = max(1, math.ceil(tile_width / MAX_STRIP_DEG))
+    strip_w    = tile_width / n_strips
+    strips = [
+        (min_lon + i * strip_w, min_lat, min_lon + (i + 1) * strip_w, max_lat)
+        for i in range(n_strips)
+    ]
+    if n_strips > 1:
+        print(f"[{tile}] Splitting into {n_strips} longitude strips "
+              f"(tile width={tile_width:.2f}°, max={MAX_STRIP_DEG}°)")
 
-    lakes_fc = lakes_fc.map(add_attributes)
+    gdfs = []
+    for i, strip_bbox in enumerate(strips):
+        gdf_strip = _detect_in_strip(
+            strip_bbox=strip_bbox,
+            tile=tile,
+            year=year,
+            composite=composite,
+            dem=dem,
+            ndwi=ndwi,
+            ndsi=ndsi,
+            start=start,
+            end=end,
+            strip_idx=i,
+        )
+        if not gdf_strip.empty:
+            gdfs.append(gdf_strip)
 
-    # Convert to GeoDataFrame (geemap handles GEE pagination internally)
-    # Lazy import to avoid Windows file-handle exhaustion on startup
-    print(f"[{tile}] Fetching results from GEE ...")
-    import geemap  # noqa: PLC0415
-    gdf = geemap.ee_to_gdf(lakes_fc)
+    if not gdfs:
+        print(f"[{tile}] WARNING: No lakes detected in any strip. "
+              "Check cloud cover or season.")
+        return gpd.GeoDataFrame()
 
-    if gdf.empty:
-        print(f"[{tile}] WARNING: No lakes detected. Check cloud cover or season.")
-        return gdf
+    gdf = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True), crs="EPSG:4326")
 
-    # Derive columns
+    # Ensure area_sqm column exists (populated from GEE properties)
+    if "area_sqm" not in gdf.columns:
+        gdf["area_sqm"] = gdf.geometry.area  # fallback (projected units — rough)
+
+    # Derive output columns
     gdf["area_ha"]    = gdf["area_sqm"] / 10_000
     gdf["volume_m3"]  = gdf["area_sqm"].apply(estimate_volume_m3)
     gdf["volume_mcm"] = gdf["volume_m3"] / 1_000_000
