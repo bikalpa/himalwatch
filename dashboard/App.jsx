@@ -9,38 +9,51 @@ const YEARS   = [2018, 2019, 2020, 2021, 2022, 2023, 2024];
 // Historical area series (ha) 2018-2024 from literature + trend extrapolation.
 // Proximity lookup radius: ~0.008° ≈ 800m.
 const NAMED_LAKE_DB = [
-  // ── Khumbu ──────────────────────────────────────────────────────────────────
-  { name:"Imja Tsho",         lon:86.9162, lat:27.8967, series:[85,92,98,104,110,118,126] },
-  { name:"Ngozumpa Tsho",     lon:86.6915, lat:27.9571, series:[620,643,657,668,680,690,700] },
-  { name:"Tsho Rolpa",        lon:86.4790, lat:27.8720, series:[152,157,162,166,170,174,173] },
-  { name:"Dig Tsho",          lon:86.5833, lat:27.8016, series:[51,49,47,46,44,43,42] },
-  { name:"Lower Barun Lake",  lon:87.0930, lat:27.7840, series:[52,62,74,88,98,105,111] },
-  { name:"Sabai Tsho",        lon:86.7121, lat:27.8229, series:[42,46,51,55,59,63,68] },
-  { name:"Lumding Tsho",      lon:86.7553, lat:27.9005, series:[13,14,15,16,17,18,19] },
-  { name:"Nare Glacier Lake", lon:86.8813, lat:27.9214, series:[9,10,10,11,12,13,15] },
-  { name:"Chamlang S. Lake",  lon:87.1882, lat:27.7530, series:[18,20,22,23,25,26,29] },
-  { name:"Baruntse Tsho",     lon:86.9950, lat:27.8310, series:[18,20,23,25,27,29,31] },
+  // ── Khumbu — major proglacial lakes ─────────────────────────────────────────
+  { name:"Imja Tsho",              lon:86.9162, lat:27.8967, series:[85,92,98,104,110,118,126] },
+  { name:"Ngozumpa Tsho",          lon:86.6915, lat:27.9571, series:[620,643,657,668,680,690,700] },
+  { name:"Tsho Rolpa",             lon:86.4790, lat:27.8720, series:[152,157,162,166,170,174,173] },
+  { name:"Dig Tsho",               lon:86.5833, lat:27.8016, series:[51,49,47,46,44,43,42] },
+  { name:"Lower Barun Lake",       lon:87.0930, lat:27.7840, series:[52,62,74,88,98,105,111] },
+  { name:"Sabai Tsho",             lon:86.7121, lat:27.8229, series:[42,46,51,55,59,63,68] },
+  { name:"Lumding Tsho",           lon:86.7553, lat:27.9005, series:[13,14,15,16,17,18,19] },
+  { name:"Nare Glacier Lake",      lon:86.8813, lat:27.9214, series:[9,10,10,11,12,13,15] },
+  { name:"Chamlang S. Lake",       lon:87.1882, lat:27.7530, series:[18,20,22,23,25,26,29] },
+  { name:"Baruntse Tsho",          lon:86.9950, lat:27.8310, series:[18,20,23,25,27,29,31] },
+  // ── Khumbu — smaller high-altitude lakes (ICIMOD inventory) ─────────────────
+  { name:"Dudh Pokhari (Gokyo)",   lon:86.6840, lat:27.9610, series:[58,61,64,67,70,72,74] },
+  { name:"Khumbu Tsho",            lon:86.8120, lat:27.9710, series:[28,29,31,32,33,35,38] },
+  { name:"Longponga Tsho",         lon:86.7480, lat:27.8620, series:[10,12,13,15,16,18,19] },
+  { name:"Chhukung Glacier Lake",  lon:86.9520, lat:27.9040, series:[14,15,17,19,21,22,24] },
+  { name:"Pokalde Tsho",           lon:86.8710, lat:27.8970, series:[7,8,8,8,9,9,9] },
+  { name:"Ama Dablam Lake",        lon:86.8600, lat:27.8610, series:[8,9,10,10,11,12,13] },
+  { name:"Kangchung Tsho",         lon:86.8710, lat:27.9320, series:[7,8,8,9,10,10,11] },
+  { name:"Phortse Glacier Lake",   lon:86.7410, lat:27.8810, series:[33,35,37,39,41,43,46] },
+  { name:"Lhotse Glacier Lake",    lon:86.9420, lat:27.9780, series:[9,9,8,9,8,8,8] },
+  { name:"Menlungtse Tsho",        lon:86.1630, lat:28.0270, series:[91,84,78,73,68,64,62] },
   // ── Annapurna ───────────────────────────────────────────────────────────────
-  { name:"Thulagi Lake",      lon:84.4897, lat:28.5333, series:[68,72,75,78,81,85,89] },
-  { name:"Tilicho Lake",      lon:83.8490, lat:28.6830, series:[325,324,323,321,320,320,318] },
-  { name:"Mirlung Tsho",      lon:84.6500, lat:28.6200, series:[19,21,22,24,25,27,29] },
-  { name:"Chhulung Tsho",     lon:84.2800, lat:28.4500, series:[9,10,11,13,14,15,16] },
+  { name:"Thulagi Lake",           lon:84.4897, lat:28.5333, series:[68,72,75,78,81,85,89] },
+  { name:"Tilicho Lake",           lon:83.8490, lat:28.6830, series:[325,324,323,321,320,320,318] },
+  { name:"Mirlung Tsho",           lon:84.6500, lat:28.6200, series:[19,21,22,24,25,27,29] },
+  { name:"Chhulung Tsho",          lon:84.2800, lat:28.4500, series:[9,10,11,13,14,15,16] },
+  { name:"Manaslu Glacier Lake",   lon:84.5630, lat:28.5870, series:[31,34,37,40,44,48,52] },
   // ── Langtang ────────────────────────────────────────────────────────────────
-  { name:"Langshisha Tsho",   lon:85.8130, lat:28.2910, series:[22,25,27,30,33,35,38] },
-  { name:"Shalbachum Tsho",   lon:85.5600, lat:28.2780, series:[11,13,14,16,17,19,21] },
-  { name:"Yala Glacier Lake", lon:85.6170, lat:28.2290, series:[4,5,6,6,7,8,9] },
+  { name:"Langshisha Tsho",        lon:85.8130, lat:28.2910, series:[22,25,27,30,33,35,38] },
+  { name:"Shalbachum Tsho",        lon:85.5600, lat:28.2780, series:[11,13,14,16,17,19,21] },
+  { name:"Yala Glacier Lake",      lon:85.6170, lat:28.2290, series:[4,5,6,6,7,8,9] },
+  { name:"Pongen Dopko",           lon:85.9310, lat:27.8800, series:[16,16,17,17,18,18,19] },
   // ── Kangchenjunga ───────────────────────────────────────────────────────────
-  { name:"Yamatari Tsho",     lon:87.7050, lat:27.7430, series:[32,34,36,39,42,46,50] },
-  { name:"Ghunsa Glacier Lake",lon:87.8300, lat:27.6800,series:[18,19,20,21,22,23,24] },
+  { name:"Yamatari Tsho",          lon:87.7050, lat:27.7430, series:[32,34,36,39,42,46,50] },
+  { name:"Ghunsa Glacier Lake",    lon:87.8300, lat:27.6800, series:[18,19,20,21,22,23,24] },
   // ── Karnali ─────────────────────────────────────────────────────────────────
-  { name:"Phoksundo Tsho",    lon:82.9670, lat:29.1170, series:[479,479,477,476,476,475,474] },
-  { name:"Kanjiroba Tsho",    lon:82.5100, lat:29.3400, series:[13,14,15,16,17,18,19] },
+  { name:"Phoksundo Tsho",         lon:82.9670, lat:29.1170, series:[479,479,477,476,476,475,474] },
+  { name:"Kanjiroba Tsho",         lon:82.5100, lat:29.3400, series:[13,14,15,16,17,18,19] },
   // ── Far West ────────────────────────────────────────────────────────────────
-  { name:"Saipal Base Lake",  lon:81.3400, lat:29.3100, series:[11,12,12,13,13,14,15] },
-  { name:"Api Glacier Lake",  lon:80.9420, lat:29.3510, series:[7,7,7,8,8,8,9] },
+  { name:"Saipal Base Lake",       lon:81.3400, lat:29.3100, series:[11,12,12,13,13,14,15] },
+  { name:"Api Glacier Lake",       lon:80.9420, lat:29.3510, series:[7,7,7,8,8,8,9] },
 ];
 
-const NAMED_LAKE_MATCH_DEG = 0.008; // ~800 m tolerance
+const NAMED_LAKE_MATCH_DEG = 0.025; // ~2.5 km tolerance (large proglacial lakes shift centroid a lot)
 
 function lookupNamedLake(lon, lat) {
   let best = null, bestDist = Infinity;
@@ -114,34 +127,46 @@ function adjustDate(dateStr) {
 
 function transformR2Lakes(geojson) {
   if (!geojson?.features?.length) return null;
-  return geojson.features.map(f => {
+
+  const r2Lakes = geojson.features.map(f => {
     const p    = f.properties ?? {};
     const lon  = p.centroid_lon ?? (f.geometry?.coordinates?.[0] ?? 86.5);
     const lat  = p.centroid_lat ?? (f.geometry?.coordinates?.[1] ?? 28.0);
     const area = p.latest_area_ha ?? 0;
     const chg  = p.area_change_pct ?? 0;
-    // Reconstruct approximate baseline from current area + change %
     const base = chg !== -100 ? area / (1 + chg / 100) : area;
-
-    // Try to match against the named lake database
     const named = lookupNamedLake(lon, lat);
 
     return {
-      id:      p.lake_id,
-      name:    named?.name || lakeName(p),
+      id:       p.lake_id,
+      name:     named?.name || lakeName(p),
       lon, lat,
-      elev:    p.mean_elevation ?? 0,
+      elev:     p.mean_elevation ?? 0,
       area,
       chg,
-      vol:     p.latest_volume_mcm ?? 0,
-      n:       p.detection_count ?? 1,
-      sev:     p.alert_severity || null,
-      tile:    p.tile || "",
-      // Use named lake historical series if available, else 2-point trend
-      series:  named?.series ?? [Math.max(0, base), area],
+      vol:      p.latest_volume_mcm ?? 0,
+      n:        p.detection_count ?? 1,
+      sev:      p.alert_severity || null,
+      tile:     p.tile || "",
+      series:   named?.series ?? [Math.max(0, base), area],
       lastDate: adjustDate(p.latest_detection_date) || null,
+      _source:  "live",
     };
   });
+
+  // Fill in DEMO_LAKES for any tile not yet covered by R2 data.
+  // This keeps the map showing all Nepal regions while the pipeline backfills.
+  const r2Tiles = new Set(r2Lakes.map(l => l.tile));
+  const demoFill = DEMO_LAKES
+    .filter(l => !r2Tiles.has(l.tile))
+    .map(l => ({ ...l, _source: "demo" }));
+
+  if (demoFill.length > 0) {
+    const missing = [...new Set(demoFill.map(l => l.tile))].join(", ");
+    console.info(`[HimalWatch] R2 tiles: ${[...r2Tiles].join(", ")} | Demo fill: ${missing}`);
+  }
+
+  return [...r2Lakes, ...demoFill];
 }
 
 function toGeoJSON(lakes) {
@@ -676,15 +701,16 @@ function AlertsView({ alerts, onSelectLake }) {
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function Header({ lakes, alerts, dark, onToggle, dataSource }) {
+function Header({ lakes, alerts, dark, onToggle, dataSource, onHome }) {
   const totalKm2  = (lakes.reduce((s,l)=>s+l.area,0)/100).toFixed(1);
   const highCount = alerts.filter(a=>a.sev==="HIGH").length;
   return (
     <header className="hdr">
-      <div className="hdr-brand">
+      <button className="hdr-brand" onClick={onHome} title="Back to overview"
+        style={{background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left"}}>
         <div className="hdr-name">Himal<em>Watch</em></div>
         <div className="hdr-sub">Glacial Lake Monitoring · Nepal Himalaya</div>
-      </div>
+      </button>
       <div className="hdr-gap"/>
       <div className="hdr-stats">
         <div className="hdr-stat"><strong>{lakes.length}</strong> lakes</div>
@@ -774,6 +800,7 @@ function App() {
 
   const handleSelect = useCallback((lake) => setSelected(lake), []);
   const handleViewChange = useCallback((v) => setView(v), []);
+  const handleHome = useCallback(() => { setView("overview"); setSelected(null); }, []);
 
   return (
     <div className="shell">
@@ -782,7 +809,7 @@ function App() {
         <div className="loading-msg">Loading HimalWatch…</div>
       </div>
 
-      <Header dark={dark} onToggle={()=>setDark(d=>!d)} lakes={lakes} alerts={alerts} dataSource={dataSource}/>
+      <Header dark={dark} onToggle={()=>setDark(d=>!d)} lakes={lakes} alerts={alerts} dataSource={dataSource} onHome={handleHome}/>
       <div className="body">
         <Sidebar view={view} onView={handleViewChange} alerts={alerts}/>
         <div className="content">
