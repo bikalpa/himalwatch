@@ -38,14 +38,6 @@ jobs:
       - name: Install pipeline dependencies
         run: pip install -r pipeline/requirements.txt
 
-      - name: Authenticate GEE (service account)
-        run: |
-          echo "$GEE_SERVICE_ACCOUNT_KEY" | base64 -d > /tmp/gee_key.json
-          earthengine authenticate --service-account-json /tmp/gee_key.json
-          rm /tmp/gee_key.json
-        env:
-          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
-
       - name: Run optical detection
         run: |
           YEAR="${{ github.event.inputs.year }}"
@@ -57,11 +49,12 @@ jobs:
             --output-dir ./outputs \
             --export-r2
         env:
-          GEE_PROJECT:          ${{ secrets.GEE_PROJECT }}
-          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
-          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+          GEE_PROJECT:              ${{ secrets.GEE_PROJECT }}
+          GEE_SERVICE_ACCOUNT_KEY:  ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+          R2_ENDPOINT_URL:          ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:         ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY:     ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:           ${{ secrets.R2_BUCKET_NAME }}
 
       - name: Run SAR detection (monsoon cloud fallback)
         run: |
@@ -74,11 +67,12 @@ jobs:
             --merge-optical \
             --export-r2 || echo "SAR detection failed for ${{ matrix.tile }} — optical only"
         env:
-          GEE_PROJECT:          ${{ secrets.GEE_PROJECT }}
-          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
-          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+          GEE_PROJECT:              ${{ secrets.GEE_PROJECT }}
+          GEE_SERVICE_ACCOUNT_KEY:  ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+          R2_ENDPOINT_URL:          ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:         ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY:     ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:           ${{ secrets.R2_BUCKET_NAME }}
 
       - name: Upload run log artifact
         if: always()
