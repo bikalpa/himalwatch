@@ -23,8 +23,9 @@ select
     cast(volume_m3      as double) as volume_m3,
     cast(volume_mcm     as double) as volume_mcm,
 
-    -- detection_date = first day of the compositing season
-    cast(season_start as date) as detection_date,
+    -- detection_date = last day of the compositing season
+    -- (imagery window closes at season_end, so this is the most accurate "observed" date)
+    cast(season_end as date) as detection_date,
     cast(detection_year as integer) as detection_year,
 
     season_start,
