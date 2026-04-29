@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: mart_lake_inventory
+    description: >
+      Latest known state of every unique glacial lake. One row per lake_id.
+      Refreshed after every pipeline run. Includes area change, volume estimate,
+      and a convenience alert_severity flag.
+    columns:
+      - name: lake_id
+        description: Stable 8-char identifier assigned at first detection.
+        tests:
+          - unique
+          - not_null
+      - name: tile
+        description: AOI tile where the lake was detected (e.g. khumbu).
+      - name: centroid_lat
+        description: Latitude of lake centroid (EPSG:4326).
+      - name: centroid_lon
+        description: Longitude of lake centroid (EPSG:4326).
+      - name: mean_elevation
+        description: Mean SRTM elevation within the lake polygon, metres.
+      - name: geometry_wkt
+        description: Latest lake polygon as WKT string (EPSG:4326).
+      - name: latest_area_sqm
+        description: Most recently observed lake surface area, square metres.
+      - name: latest_area_ha
+        description: Most recently observed lake surface area, hectares.
+      - name: first_area_sqm
+        description: Lake area at first detection, square metres.
+      - name: area_change_sqm
+        description: Absolute area change (latest minus first), square metres.
+      - name: area_change_pct
+        description: Relative area change (latest vs first) as percentage.
+      - name: latest_volume_m3
+        description: Estimated volume at latest detection (Cook & Quincey 2015), m³.
+      - name: latest_volume_mcm
+        description: Estimated volume at latest detection, million cubic metres (MCM).
+      - name: volume_change_mcm
+        description: Estimated volume change between first and latest detection, MCM.
+      - name: latest_ndwi
+        description: Mean NDWI within the lake at latest detection.
+      - name: first_detected_date
+        description: Date of the earliest detection of this lake.
+      - name: latest_detection_date
+        description: Date of the most recent detection of this lake.
+      - name: detection_count
+        description: Total number of times this lake has been detected.
+      - name: alert_severity
+        description: "Alert tier if area change qualifies: HIGH / MEDIUM / LOW / null."
+
+  - name: mart_change_alerts
+    description: >
+      Lakes with anomalous area change warranting attention. Subset of
+      mart_lake_inventory where area_change_pct > 15%, detection_count >= 2,
+      and latest detection is within 90 days.
+    columns:
+      - name: lake_id
+        description: Stable lake identifier.
+        tests:
+          - unique
+          - not_null
+      - name: alert_severity
+        description: "HIGH (>50%), MEDIUM (30–50%), or LOW (15–30%) area change."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [HIGH, MEDIUM, LOW]
+      - name: area_change_pct
+        description: Relative area change percentage (positive = growth, negative = shrinkage).
+      - name: days_since_observation
+        description: Days between the latest detection and today. Alerts go stale after 90 days.

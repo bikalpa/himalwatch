@@ -1,0 +1,182 @@
+name: pipeline
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"       # Every Sunday 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Year to process (default: previous complete year)"
+        required: false
+        default: ""
+      tile:
+        description: "Single tile to run (default: all)"
+        required: false
+        default: "all"
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Detect lakes — parallel matrix over all 6 AOI tiles
+  # -----------------------------------------------------------------------
+  detect:
+    name: detect / ${{ matrix.tile }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tile: [far_west, karnali, annapurna, langtang, khumbu, kangchenjunga]
+      fail-fast: false       # continue other tiles if one fails
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - name: Install pipeline dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Authenticate GEE (service account)
+        run: |
+          echo "$GEE_SERVICE_ACCOUNT_KEY" | base64 -d > /tmp/gee_key.json
+          earthengine authenticate --service-account-json /tmp/gee_key.json
+          rm /tmp/gee_key.json
+        env:
+          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run optical detection
+        run: |
+          YEAR="${{ github.event.inputs.year }}"
+          YEAR="${YEAR:-$(date -d 'last year' +%Y)}"
+          echo "Processing tile=${{ matrix.tile }} year=$YEAR"
+          python pipeline/gee/lake_detection.py \
+            --tile ${{ matrix.tile }} \
+            --year $YEAR \
+            --output-dir ./outputs \
+            --export-r2
+        env:
+          GEE_PROJECT:          ${{ secrets.GEE_PROJECT }}
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+
+      - name: Run SAR detection (monsoon cloud fallback)
+        run: |
+          YEAR="${{ github.event.inputs.year }}"
+          YEAR="${YEAR:-$(date -d 'last year' +%Y)}"
+          python pipeline/gee/sar_detection.py \
+            --tile ${{ matrix.tile }} \
+            --year $YEAR \
+            --output-dir ./outputs \
+            --merge-optical \
+            --export-r2 || echo "SAR detection failed for ${{ matrix.tile }} — optical only"
+        env:
+          GEE_PROJECT:          ${{ secrets.GEE_PROJECT }}
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+
+      - name: Upload run log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-log-${{ matrix.tile }}
+          path: outputs/${{ matrix.tile }}/run_log.json
+
+  # -----------------------------------------------------------------------
+  # Job 2: dbt + export marts — runs after all detect jobs complete
+  # -----------------------------------------------------------------------
+  transform:
+    name: dbt + export marts
+    needs: detect
+    runs-on: ubuntu-latest
+    if: always()             # run even if some tiles failed
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dbt + export deps
+        run: pip install dbt-duckdb boto3 python-dotenv
+
+      - name: Write dbt profiles.yml
+        run: |
+          ACCOUNT_ID=$(echo "$R2_ENDPOINT_URL" | sed 's|https://||' | cut -d. -f1)
+          cat > dbt/profiles.yml <<EOF
+          himalwatch:
+            target: prod
+            outputs:
+              prod:
+                type: duckdb
+                path: /tmp/himalwatch.duckdb
+                extensions: [httpfs]
+                settings:
+                  s3_endpoint: "${ACCOUNT_ID}.r2.cloudflarestorage.com"
+                  s3_access_key_id: "${R2_ACCESS_KEY_ID}"
+                  s3_secret_access_key: "${R2_SECRET_ACCESS_KEY}"
+                  s3_use_ssl: true
+                  s3_url_style: path
+          EOF
+        env:
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+      - name: Run dbt models
+        working-directory: dbt
+        run: dbt run --profiles-dir .
+        env:
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+
+      - name: Run dbt tests
+        working-directory: dbt
+        run: dbt test --profiles-dir .
+        env:
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+
+      - name: Export marts to R2
+        run: python dbt/export_marts.py
+        env:
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+
+  # -----------------------------------------------------------------------
+  # Job 3: Alert fan-out — runs after marts are exported
+  # -----------------------------------------------------------------------
+  alerts:
+    name: alert fan-out
+    needs: transform
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install boto3 python-dotenv requests
+      - name: Fan out alerts
+        run: python pipeline/alerts/fanout.py
+        env:
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+          R2_PUBLIC_URL:        ${{ secrets.R2_PUBLIC_URL }}
+          RESEND_API_KEY:       ${{ secrets.RESEND_API_KEY }}
+          GITHUB_TOKEN:         ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO:          ${{ github.repository }}

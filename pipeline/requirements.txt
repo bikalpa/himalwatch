@@ -1,0 +1,12 @@
+earthengine-api>=0.1.390
+geemap>=0.30.0
+geopandas>=0.14.0
+shapely>=2.0.0
+pandas>=2.0.0
+pyarrow>=14.0.0
+boto3>=1.34.0
+python-dotenv>=1.0.0
+click>=8.1.0
+requests>=2.31.0
+overpy>=0.7.0
+# richdem and whitebox are used by downstream_analysis.py only — install separately if needed

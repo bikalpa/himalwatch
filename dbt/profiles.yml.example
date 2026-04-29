@@ -1,0 +1,15 @@
+# Copy to profiles.yml and fill in real values. NEVER commit profiles.yml.
+# In CI, credentials are injected via environment variables — see pipeline.yml.
+himalwatch:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ./himalwatch_dev.duckdb
+      extensions: [httpfs]
+      settings:
+        s3_endpoint: "ACCOUNT_ID.r2.cloudflarestorage.com"
+        s3_access_key_id: "{{ env_var('R2_ACCESS_KEY_ID') }}"
+        s3_secret_access_key: "{{ env_var('R2_SECRET_ACCESS_KEY') }}"
+        s3_use_ssl: true
+        s3_url_style: path

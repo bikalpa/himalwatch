@@ -1,0 +1,17 @@
+# Cloudflare Worker configuration
+# Deploy: wrangler deploy
+# Local dev: wrangler dev
+
+name = "himalwatch-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# R2 bucket binding — Worker can read R2 objects directly (zero egress cost)
+[[r2_buckets]]
+binding = "DATA_BUCKET"
+bucket_name = "himalwatch-data"
+
+# Routes
+# [env.production.routes]
+# pattern = "api.himalwatch.earth/*"
+# zone_name = "himalwatch.earth"

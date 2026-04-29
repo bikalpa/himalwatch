@@ -1,0 +1,20 @@
+# HimalWatch dbt project
+# Adapter: dbt-duckdb (reads Parquet directly from Cloudflare R2 via httpfs)
+# TODO: implement — see docs/build_guide.md Phase 3
+
+name: himalwatch
+version: "1.0.0"
+profile: himalwatch
+
+model-paths: ["models"]
+snapshot-paths: ["models/snapshots"]
+test-paths: ["tests"]
+
+models:
+  himalwatch:
+    staging:
+      materialized: view
+    marts:
+      materialized: table
+    snapshots:
+      materialized: table

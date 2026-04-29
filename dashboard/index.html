@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HimalWatch — Glacial Lake Monitoring</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- MapLibre GL JS -->
+  <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-name">HimalWatch</span>
+        <span class="brand-sub">Glacial Lake Monitoring · Nepal Himalaya</span>
+      </div>
+      <div class="header-stats" id="header-stats">
+        <span class="stat"><span id="stat-lakes">—</span> lakes</span>
+        <span class="stat"><span id="stat-area">—</span> sqkm</span>
+        <span class="stat alert-badge" id="stat-alerts" style="display:none"></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== TABS ===== -->
+  <nav class="tabs">
+    <button class="tab active" data-view="map">Map View</button>
+    <button class="tab" data-view="list">Lake List</button>
+    <button class="tab" data-view="alerts">Change Alerts</button>
+  </nav>
+
+  <!-- ===== VIEWS ===== -->
+  <main>
+
+    <!-- MAP VIEW -->
+    <section id="view-map" class="view active">
+      <div id="map"></div>
+      <div class="map-legend">
+        <div class="legend-title">Alert Status</div>
+        <div class="legend-item"><span class="dot" style="background:#6b7280"></span> No alert</div>
+        <div class="legend-item"><span class="dot" style="background:#eab308"></span> LOW</div>
+        <div class="legend-item"><span class="dot" style="background:#f97316"></span> MEDIUM</div>
+        <div class="legend-item"><span class="dot" style="background:#ef4444"></span> HIGH</div>
+      </div>
+    </section>
+
+    <!-- LAKE LIST VIEW -->
+    <section id="view-list" class="view">
+      <div class="view-toolbar">
+        <input id="list-search" type="text" placeholder="Filter by tile or lake ID..." />
+        <span id="list-count" class="muted"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="lake-table">
+          <thead>
+            <tr>
+              <th data-col="lake_id">Lake ID</th>
+              <th data-col="tile">Tile</th>
+              <th data-col="mean_elevation" class="num">Elevation (m)</th>
+              <th data-col="latest_area_ha" class="num">Area (ha)</th>
+              <th data-col="area_change_pct" class="num">Change %</th>
+              <th data-col="latest_volume_mcm" class="num">Vol (MCM)</th>
+              <th data-col="latest_detection_date">Last Detected</th>
+              <th data-col="alert_severity">Alert</th>
+            </tr>
+          </thead>
+          <tbody id="lake-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CHANGE ALERTS VIEW -->
+    <section id="view-alerts" class="view">
+      <div id="alerts-container"></div>
+    </section>
+
+  </main>
+
+  <!-- ===== LOADING OVERLAY ===== -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <p id="loading-msg">Loading lake data...</p>
+  </div>
+
+  <!-- ===== FOOTER ===== -->
+  <footer>
+    Data updated weekly from Sentinel-2 (ESA) · Published under
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a> ·
+    <a href="https://github.com/bikalpa/himalwatch" target="_blank">github.com/bikalpa/himalwatch</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

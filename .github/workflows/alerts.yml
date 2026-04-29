@@ -1,0 +1,35 @@
+# HimalWatch — Alert Fan-out
+#
+# Runs after pipeline.yml completes. Diffs new mart_change_alerts.parquet
+# against the previous snapshot and fans out new HIGH/MEDIUM severity alerts to:
+#   - GitHub Issues (auto-created, public audit trail)
+#   - alerts.atom RSS feed (written to R2, served publicly)
+#   - Email via Resend (opt-in subscriber list)
+#
+# TODO: implement
+
+name: alerts
+
+on:
+  workflow_run:
+    workflows: [pipeline]
+    types: [completed]
+
+jobs:
+  fan-out:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # TODO: implement alert_fanout.py
+      # Steps:
+      #   1. Download latest alerts parquet from R2
+      #   2. Compare against previous snapshot to find NEW alerts
+      #   3. For each new HIGH/MEDIUM alert:
+      #      a. Create GitHub Issue with coordinates, severity, change %, runout
+      #      b. Append to alerts.atom RSS feed, upload to R2
+      #      c. Send email via Resend API (to subscriber list in R2)

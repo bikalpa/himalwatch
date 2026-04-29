@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+.env.bak
+*.env.local
+
+# Claude local settings (may contain tokens)
+.claude/settings.local.json
+
+# Pipeline outputs
+outputs/
+
+# Outputs
+pipeline/outputs/
+*.geojson
+*.parquet
+*.csv
+
+# dbt
+dbt/profiles.yml
+dbt/*.duckdb
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node / Wrangler
+node_modules/
+.wrangler/
+worker/dist/
+
+# OS
+.DS_Store
+Thumbs.db
