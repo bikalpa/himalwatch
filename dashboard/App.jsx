@@ -98,9 +98,12 @@ const TILE_LABELS = {
 };
 
 function lakeName(p) {
-  const prefix = TILE_LABELS[p.tile] || (p.tile || "Lake");
-  const short  = (p.lake_id || "").slice(-6);
-  return `${prefix} ${short}`;
+  const region = TILE_LABELS[p.tile] || (p.tile || "Lake");
+  // Use elevation as the primary differentiator — more informative than a hash
+  if (p.mean_elevation) {
+    return `${region} · ${Math.round(p.mean_elevation)}m`;
+  }
+  return `${region} · ${(p.lake_id || "").slice(-4)}`;
 }
 
 function adjustDate(dateStr) {
@@ -369,20 +372,23 @@ function MapView({ active, lakes, onSelectLake, selectedLake }) {
         const id   = e.features[0]?.properties?.id;
         const lake = lakesRef.current.find(l => l.id === id);
         if (!lake) return;
+
+        // Open detail panel immediately on click
+        selectRef.current(lake);
+
+        // Also show a compact popup as a map anchor (closes when panel opens)
         if (popupRef.current) popupRef.current.remove();
-        const popup = new maplibregl.Popup({ closeButton: false, maxWidth: "270px", offset: 12 })
+        const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "240px", offset: 12 })
           .setLngLat(e.lngLat)
           .setHTML(`
             <div class="popup-name">${lake.name}</div>
-            <div class="popup-row"><span class="popup-lbl">Elevation</span><span class="popup-val">${fmt(lake.elev,0)} m asl</span></div>
             <div class="popup-row"><span class="popup-lbl">Area</span><span class="popup-val">${fmt(lake.area,1)} ha</span></div>
-            <div class="popup-row"><span class="popup-lbl">Volume</span><span class="popup-val">${fmt(lake.vol,2)} MCM</span></div>
+            <div class="popup-row"><span class="popup-lbl">Elevation</span><span class="popup-val">${fmt(lake.elev,0)} m asl</span></div>
             <div class="popup-row"><span class="popup-lbl">Change</span>
               <span class="popup-val" style="color:${lake.chg>15?"#ef4444":lake.chg<-10?"#22c55e":"inherit"}">${fmtPct(lake.chg)}</span>
             </div>
             <div class="popup-row"><span class="popup-lbl">Last seen</span><span class="popup-val">${lake.lastDate || "2024-09-30"}</span></div>
             ${lake.sev ? `<div class="popup-row"><span class="popup-lbl">Alert</span><span class="badge badge-${lake.sev}">${lake.sev}</span></div>` : ""}
-            <button class="popup-action" onclick="window.__hw_select('${lake.id}')">Open detail panel →</button>
           `)
           .addTo(map);
         popupRef.current = popup;
@@ -391,21 +397,22 @@ function MapView({ active, lakes, onSelectLake, selectedLake }) {
       map.on("mouseleave", "lakes-circles", () => map.getCanvas().style.cursor = "");
     });
 
-    window.__hw_select = (id) => {
-      const lake = lakesRef.current.find(l => l.id === id);
-      if (lake) {
-        selectRef.current(lake);
-        if (popupRef.current) { popupRef.current.remove(); popupRef.current = null; }
-      }
-    };
   }, []);
 
-  // Update map source when lakes change (after R2 fetch)
+  // Update map source when lakes change (after R2 fetch).
+  // Guard against the race where R2 data arrives before the style finishes loading.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const src = map.getSource("lakes");
-    if (src) src.setData(toGeoJSON(lakes));
+    if (!map) return;
+    const doUpdate = () => {
+      const src = map.getSource("lakes");
+      if (src) src.setData(toGeoJSON(lakes));
+    };
+    if (map.isStyleLoaded()) {
+      doUpdate();
+    } else {
+      map.once("load", doUpdate);
+    }
   }, [lakes]);
 
   // Satellite / Topo toggle
