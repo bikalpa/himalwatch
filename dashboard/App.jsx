@@ -707,7 +707,7 @@ function Header({ lakes, alerts, dark, onToggle, dataSource, onHome }) {
   return (
     <header className="hdr">
       <button className="hdr-brand" onClick={onHome} title="Back to overview"
-        style={{background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left"}}>
+        style={{background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left",color:"inherit",fontFamily:"inherit"}}>
         <div className="hdr-name">Himal<em>Watch</em></div>
         <div className="hdr-sub">Glacial Lake Monitoring · Nepal Himalaya</div>
       </button>
