@@ -152,8 +152,13 @@ def _detect_in_strip(
     lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
     lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
 
-    # Simplify geometries to reduce transfer payload (~20m tolerance)
+    # Simplify geometries to reduce transfer payload (~20m tolerance).
+    # Re-compute area_sqm and re-filter after simplification — some marginal
+    # polygons can collapse to null/degenerate geometry at 20 m tolerance,
+    # causing "Parameter 'feature' is required and may not be null" on getInfo.
     lakes_fc = lakes_fc.map(lambda f: f.setGeometry(f.geometry().simplify(DETECT_SCALE_M)))
+    lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
+    lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
 
     # Add per-lake attributes
     def add_attributes(f):
@@ -221,21 +226,32 @@ def detect_lakes(tile: str, year: int) -> gpd.GeoDataFrame:
               f"(tile width={tile_width:.2f}°, max={MAX_STRIP_DEG}°)")
 
     gdfs = []
+    strip_errors = []
     for i, strip_bbox in enumerate(strips):
-        gdf_strip = _detect_in_strip(
-            strip_bbox=strip_bbox,
-            tile=tile,
-            year=year,
-            composite=composite,
-            dem=dem,
-            ndwi=ndwi,
-            ndsi=ndsi,
-            start=start,
-            end=end,
-            strip_idx=i,
-        )
-        if not gdf_strip.empty:
-            gdfs.append(gdf_strip)
+        try:
+            gdf_strip = _detect_in_strip(
+                strip_bbox=strip_bbox,
+                tile=tile,
+                year=year,
+                composite=composite,
+                dem=dem,
+                ndwi=ndwi,
+                ndsi=ndsi,
+                start=start,
+                end=end,
+                strip_idx=i,
+            )
+            if not gdf_strip.empty:
+                gdfs.append(gdf_strip)
+        except Exception as exc:
+            msg = f"[{tile}/strip{i}] Strip failed: {exc} — continuing with remaining strips"
+            print(msg)
+            strip_errors.append(msg)
+            continue
+
+    if strip_errors:
+        print(f"[{tile}] {len(strip_errors)}/{n_strips} strips had errors (partial result)")
+
 
     if not gdfs:
         print(f"[{tile}] WARNING: No lakes detected in any strip. "

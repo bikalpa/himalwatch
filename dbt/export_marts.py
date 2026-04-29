@@ -23,7 +23,13 @@ s3 = boto3.client(
 )
 bucket = os.getenv("R2_BUCKET_NAME", "himalwatch-data")
 tmp    = Path(tempfile.gettempdir())
-db     = Path(__file__).parent / "himalwatch_dev.duckdb"
+
+# In CI, dbt writes to /tmp/himalwatch.duckdb (set by profiles.yml).
+# In local dev, fall back to the dev database file.
+ci_db  = Path("/tmp/himalwatch.duckdb")
+dev_db = Path(__file__).parent / "himalwatch_dev.duckdb"
+db     = ci_db if ci_db.exists() else dev_db
+print(f"Opening DuckDB at: {db}")
 
 con = duckdb.connect(str(db))
 
