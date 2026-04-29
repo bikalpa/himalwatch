@@ -12,7 +12,7 @@ const NAMED_LAKE_DB = [
   // ── Khumbu — major proglacial lakes ─────────────────────────────────────────
   { name:"Imja Tsho",              lon:86.9162, lat:27.8967, series:[85,92,98,104,110,118,126] },
   { name:"Ngozumpa Tsho",          lon:86.6915, lat:27.9571, series:[620,643,657,668,680,690,700] },
-  { name:"Tsho Rolpa",             lon:86.4790, lat:27.8720, series:[152,157,162,166,170,174,173] },
+  { name:"Tsho Rolpa",             lon:86.4920, lat:27.8600, series:[152,157,162,166,170,174,173] },
   { name:"Dig Tsho",               lon:86.5833, lat:27.8016, series:[51,49,47,46,44,43,42] },
   { name:"Lower Barun Lake",       lon:87.0930, lat:27.7840, series:[52,62,74,88,98,105,111] },
   { name:"Sabai Tsho",             lon:86.7121, lat:27.8229, series:[42,46,51,55,59,63,68] },
@@ -33,7 +33,7 @@ const NAMED_LAKE_DB = [
   { name:"Menlungtse Tsho",        lon:86.1630, lat:28.0270, series:[91,84,78,73,68,64,62] },
   // ── Annapurna ───────────────────────────────────────────────────────────────
   { name:"Thulagi Lake",           lon:84.4897, lat:28.5333, series:[68,72,75,78,81,85,89] },
-  { name:"Tilicho Lake",           lon:83.8490, lat:28.6830, series:[325,324,323,321,320,320,318] },
+  { name:"Tilicho Lake",           lon:83.8170, lat:28.6830, series:[325,324,323,321,320,320,318] },
   { name:"Mirlung Tsho",           lon:84.6500, lat:28.6200, series:[19,21,22,24,25,27,29] },
   { name:"Chhulung Tsho",          lon:84.2800, lat:28.4500, series:[9,10,11,13,14,15,16] },
   { name:"Manaslu Glacier Lake",   lon:84.5630, lat:28.5870, series:[31,34,37,40,44,48,52] },
@@ -46,7 +46,7 @@ const NAMED_LAKE_DB = [
   { name:"Yamatari Tsho",          lon:87.7050, lat:27.7430, series:[32,34,36,39,42,46,50] },
   { name:"Ghunsa Glacier Lake",    lon:87.8300, lat:27.6800, series:[18,19,20,21,22,23,24] },
   // ── Karnali ─────────────────────────────────────────────────────────────────
-  { name:"Phoksundo Tsho",         lon:82.9670, lat:29.1170, series:[479,479,477,476,476,475,474] },
+  { name:"Phoksundo Tsho",         lon:82.9580, lat:29.2330, series:[479,479,477,476,476,475,474] },
   { name:"Kanjiroba Tsho",         lon:82.5100, lat:29.3400, series:[13,14,15,16,17,18,19] },
   // ── Far West ────────────────────────────────────────────────────────────────
   { name:"Saipal Base Lake",       lon:81.3400, lat:29.3100, series:[11,12,12,13,13,14,15] },
@@ -74,13 +74,13 @@ const DEMO_LAKES = [
   { id:"lk_fw03", name:"Darchula Tsho",        lon:80.620, lat:28.820, elev:4380, area:22.3, chg:+30.4, vol:13.4, n:4, sev:"MEDIUM", tile:"far_west",      lastDate:"2024-09-30", series:[13,14,16,18,19,21,22] },
   { id:"lk_fw04", name:"Chhembur Tsho",        lon:81.520, lat:28.950, elev:4510, area:11.6, chg:+20.8, vol:7.0,  n:3, sev:"LOW",    tile:"far_west",      lastDate:"2024-09-30", series:[8,9,9,10,10,11,12] },
   // ── KARNALI (82.1–83.8°E) ──────────────────────────────────────────────────
-  { id:"lk_ka01", name:"Phoksundo Tsho",       lon:82.967, lat:29.117, elev:3611, area:474.1,chg:-1.0,  vol:700., n:7, sev:null,     tile:"karnali",       lastDate:"2024-09-30", series:[479,479,477,476,476,475,474] },
+  { id:"lk_ka01", name:"Phoksundo Tsho",       lon:82.958, lat:29.233, elev:3611, area:474.1,chg:-1.0,  vol:700., n:7, sev:null,     tile:"karnali",       lastDate:"2024-09-30", series:[479,479,477,476,476,475,474] },
   { id:"lk_ka02", name:"Kanjiroba Tsho",       lon:82.510, lat:29.340, elev:4920, area:19.1, chg:+22.4, vol:11.5, n:4, sev:"LOW",    tile:"karnali",       lastDate:"2024-09-30", series:[13,14,15,16,17,18,19] },
   { id:"lk_ka03", name:"Jangla Tsho",          lon:83.620, lat:29.180, elev:4780, area:31.6, chg:+19.6, vol:19.0, n:4, sev:"LOW",    tile:"karnali",       lastDate:"2024-09-30", series:[22,24,25,27,28,29,32] },
   { id:"lk_ka04", name:"Dolpo Glacier Lake",   lon:83.250, lat:29.090, elev:5100, area:24.9, chg:+8.7,  vol:14.9, n:5, sev:null,     tile:"karnali",       lastDate:"2024-09-30", series:[22,22,23,23,24,24,25] },
   // ── ANNAPURNA (83.8–85.1°E) ────────────────────────────────────────────────
   { id:"lk_an01", name:"Thulagi Lake",         lon:84.490, lat:28.533, elev:3960, area:89.4, chg:+30.9, vol:53.6, n:6, sev:"MEDIUM", tile:"annapurna",     lastDate:"2024-09-30", series:[68,72,75,78,81,85,89] },
-  { id:"lk_an02", name:"Tilicho Lake",         lon:83.849, lat:28.683, elev:4920, area:319.8,chg:-1.6,  vol:480., n:6, sev:null,     tile:"annapurna",     lastDate:"2024-09-30", series:[325,324,323,321,320,320,318] },
+  { id:"lk_an02", name:"Tilicho Lake",         lon:83.817, lat:28.683, elev:4920, area:319.8,chg:-1.6,  vol:480., n:6, sev:null,     tile:"annapurna",     lastDate:"2024-09-30", series:[325,324,323,321,320,320,318] },
   { id:"lk_an03", name:"Mirlung Tsho",         lon:84.650, lat:28.620, elev:4780, area:28.9, chg:+52.1, vol:17.3, n:4, sev:"HIGH",   tile:"annapurna",     lastDate:"2024-09-30", series:[19,21,22,24,25,27,29] },
   { id:"lk_an04", name:"Chhulung Tsho",        lon:84.280, lat:28.450, elev:4520, area:16.4, chg:+37.9, vol:9.8,  n:4, sev:"MEDIUM", tile:"annapurna",     lastDate:"2024-09-30", series:[9,10,11,13,14,15,16] },
   { id:"lk_an05", name:"Manaslu Tsho",         lon:84.563, lat:28.587, elev:4200, area:52.3, chg:+35.7, vol:31.4, n:5, sev:"MEDIUM", tile:"annapurna",     lastDate:"2024-09-30", series:[31,34,37,40,44,48,52] },
@@ -93,7 +93,7 @@ const DEMO_LAKES = [
   // ── KHUMBU (86.2–87.2°E) ───────────────────────────────────────────────────
   { id:"lk_kh01", name:"Imja Tsho",            lon:86.916, lat:27.897, elev:5010, area:125.3,chg:+47.4, vol:75.1, n:7, sev:"HIGH",   tile:"khumbu",        lastDate:"2024-09-30", series:[85,92,98,104,110,118,125] },
   { id:"lk_kh02", name:"Ngozumpa Tsho",        lon:86.691, lat:27.957, elev:4698, area:700.2,chg:+12.9, vol:420., n:7, sev:"MEDIUM", tile:"khumbu",        lastDate:"2024-09-30", series:[620,643,657,668,680,690,700] },
-  { id:"lk_kh03", name:"Tsho Rolpa",           lon:86.479, lat:27.872, elev:4580, area:173.2,chg:+13.9, vol:103.9,n:7, sev:"MEDIUM", tile:"khumbu",        lastDate:"2024-09-30", series:[152,157,162,166,170,174,173] },
+  { id:"lk_kh03", name:"Tsho Rolpa",           lon:86.492, lat:27.860, elev:4580, area:173.2,chg:+13.9, vol:103.9,n:7, sev:"MEDIUM", tile:"khumbu",        lastDate:"2024-09-30", series:[152,157,162,166,170,174,173] },
   { id:"lk_kh04", name:"Dig Tsho",             lon:86.583, lat:27.802, elev:4350, area:42.1, chg:-17.4, vol:25.3, n:7, sev:null,     tile:"khumbu",        lastDate:"2024-09-30", series:[51,49,47,46,44,43,42] },
   { id:"lk_kh05", name:"Lower Barun Lake",     lon:87.093, lat:27.784, elev:4740, area:110.7,chg:+113.1,vol:66.4, n:6, sev:"HIGH",   tile:"khumbu",        lastDate:"2024-09-30", series:[52,62,74,88,98,105,111] },
   { id:"lk_kh06", name:"Sabai Tsho",           lon:86.712, lat:27.823, elev:4820, area:67.8, chg:+61.4, vol:40.7, n:6, sev:"HIGH",   tile:"khumbu",        lastDate:"2024-09-30", series:[42,46,51,55,59,63,68] },
