@@ -46,7 +46,7 @@ const NAMED_LAKE_DB = [
   { name:"Yamatari Tsho",          lon:87.7050, lat:27.7430, series:[32,34,36,39,42,46,50] },
   { name:"Ghunsa Glacier Lake",    lon:87.8300, lat:27.6800, series:[18,19,20,21,22,23,24] },
   // ── Karnali ─────────────────────────────────────────────────────────────────
-  { name:"Phoksundo Tsho",         lon:82.9580, lat:29.2330, series:[479,479,477,476,476,475,474] },
+  { name:"Phoksundo Tsho",         lon:82.9580, lat:29.2100, series:[479,479,477,476,476,475,474] },
   { name:"Kanjiroba Tsho",         lon:82.5100, lat:29.3400, series:[13,14,15,16,17,18,19] },
   // ── Far West ────────────────────────────────────────────────────────────────
   { name:"Saipal Base Lake",       lon:81.3400, lat:29.3100, series:[11,12,12,13,13,14,15] },
@@ -74,7 +74,7 @@ const DEMO_LAKES = [
   { id:"lk_fw03", name:"Darchula Tsho",        lon:80.620, lat:28.820, elev:4380, area:22.3, chg:+30.4, vol:13.4, n:4, sev:"MEDIUM", tile:"far_west",      lastDate:"2024-09-30", series:[13,14,16,18,19,21,22] },
   { id:"lk_fw04", name:"Chhembur Tsho",        lon:81.520, lat:28.950, elev:4510, area:11.6, chg:+20.8, vol:7.0,  n:3, sev:"LOW",    tile:"far_west",      lastDate:"2024-09-30", series:[8,9,9,10,10,11,12] },
   // ── KARNALI (82.1–83.8°E) ──────────────────────────────────────────────────
-  { id:"lk_ka01", name:"Phoksundo Tsho",       lon:82.958, lat:29.233, elev:3611, area:474.1,chg:-1.0,  vol:700., n:7, sev:null,     tile:"karnali",       lastDate:"2024-09-30", series:[479,479,477,476,476,475,474] },
+  { id:"lk_ka01", name:"Phoksundo Tsho",       lon:82.958, lat:29.210, elev:3611, area:474.1,chg:-1.0,  vol:700., n:7, sev:null,     tile:"karnali",       lastDate:"2024-09-30", series:[479,479,477,476,476,475,474] },
   { id:"lk_ka02", name:"Kanjiroba Tsho",       lon:82.510, lat:29.340, elev:4920, area:19.1, chg:+22.4, vol:11.5, n:4, sev:"LOW",    tile:"karnali",       lastDate:"2024-09-30", series:[13,14,15,16,17,18,19] },
   { id:"lk_ka03", name:"Jangla Tsho",          lon:83.620, lat:29.180, elev:4780, area:31.6, chg:+19.6, vol:19.0, n:4, sev:"LOW",    tile:"karnali",       lastDate:"2024-09-30", series:[22,24,25,27,28,29,32] },
   { id:"lk_ka04", name:"Dolpo Glacier Lake",   lon:83.250, lat:29.090, elev:5100, area:24.9, chg:+8.7,  vol:14.9, n:5, sev:null,     tile:"karnali",       lastDate:"2024-09-30", series:[22,22,23,23,24,24,25] },
