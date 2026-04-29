@@ -260,10 +260,9 @@ function AreaChart({ series, yearLabels }) {
 }
 
 // ─── Detail Panel ─────────────────────────────────────────────────────────────
-function DetailPanel({ lake, fallbackLake, onClose }) {
-  const open = !!lake;
-  const l = lake || fallbackLake;
-  if (!l) return null;
+function DetailPanel({ lake, onClose }) {
+  if (!lake) return null;
+  const l = lake;
 
   const chgCol   = l.chg > 15 ? "var(--high)" : l.chg < -10 ? "var(--success)" : "var(--text)";
   const lastObs  = l.lastDate || "2024-09-30";
@@ -271,11 +270,11 @@ function DetailPanel({ lake, fallbackLake, onClose }) {
   const hasMultiYear = l.series?.length > 2;
 
   return (
-    <div className={`detail-panel ${open ? "open" : ""}`}>
+    <div className="detail-panel open" role="dialog" aria-modal="false" aria-label={`${l.name} details`}>
       <div className="detail-head">
         <div className="detail-name">{l.name}</div>
         <div className="detail-sub">{l.id} · {TILE_LABELS[l.tile] || l.tile}</div>
-        <button className="detail-close" onClick={onClose}><IcoX/></button>
+        <button className="detail-close" onClick={onClose} aria-label="Close details"><IcoX/></button>
       </div>
       <div className="detail-body">
         {l.sev && <div style={{marginBottom:12}}><Badge sev={l.sev}/></div>}
@@ -817,7 +816,7 @@ function App() {
           {view==="overview" && <OverviewView lakes={lakes} alerts={alerts} onSelectLake={handleSelect}/>}
           {view==="lakes"    && <LakesView    lakes={lakes}                  onSelectLake={handleSelect}/>}
           {view==="alerts"   && <AlertsView   alerts={alerts}                onSelectLake={handleSelect}/>}
-          <DetailPanel lake={selected} fallbackLake={lakes[0]} onClose={()=>setSelected(null)}/>
+          <DetailPanel lake={selected} onClose={()=>setSelected(null)}/>
         </div>
       </div>
 
