@@ -28,6 +28,7 @@ Usage:
 
 import argparse
 import json
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -41,6 +42,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.aoi_tiles import get_tile_bbox
 from utils.volume_estimate import estimate_volume_m3
+from lake_detection import DETECT_SCALE_M, MAX_STRIP_DEG, _download_fc
 
 load_dotenv()
 
@@ -193,20 +195,6 @@ def detect_lakes_sar(tile: str, year: int) -> gpd.GeoDataFrame:
     print(f"[{tile}/SAR] Detecting water ...")
     water_mask = detect_water_sar(composite, dem)
 
-    # Vectorise
-    lakes_fc = water_mask.reduceToVectors(
-        geometry=aoi,
-        scale=10,
-        geometryType="polygon",
-        eightConnected=False,
-        maxPixels=1e10,
-        bestEffort=True,
-    )
-
-    # Add area and filter
-    lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
-    lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
-
     vv = composite.select("VV")
     vh = composite.select("VH")
 
@@ -217,8 +205,8 @@ def detect_lakes_sar(tile: str, year: int) -> gpd.GeoDataFrame:
             "centroid_lon":   centroid.get(0),
             "centroid_lat":   centroid.get(1),
             "mean_elevation": dem.reduceRegion(ee.Reducer.mean(), geom, 30).get("elevation"),
-            "mean_vv_db":     vv.reduceRegion(ee.Reducer.mean(), geom, 10).get("VV"),
-            "mean_vh_db":     vh.reduceRegion(ee.Reducer.mean(), geom, 10).get("VH"),
+            "mean_vv_db":     vv.reduceRegion(ee.Reducer.mean(), geom, DETECT_SCALE_M).get("VV"),
+            "mean_vh_db":     vh.reduceRegion(ee.Reducer.mean(), geom, DETECT_SCALE_M).get("VH"),
             "detection_year": year,
             "season_start":   start,
             "season_end":     end,
@@ -226,11 +214,41 @@ def detect_lakes_sar(tile: str, year: int) -> gpd.GeoDataFrame:
             "source":         "SAR",   # flag: this detection came from SAR not optical
         })
 
-    lakes_fc = lakes_fc.map(add_attributes)
+    # Vectorise per longitude strip. Doing the whole tile in one synchronous
+    # geemap.ee_to_gdf() call hung for 6h on wide tiles (karnali, annapurna)
+    # and got the CI job cancelled — same fix as the optical detector.
+    min_lon, min_lat, max_lon, max_lat = bbox
+    n_strips = max(1, math.ceil((max_lon - min_lon) / MAX_STRIP_DEG))
+    strip_w  = (max_lon - min_lon) / n_strips
+    gdfs = []
+    for i in range(n_strips):
+        strip = ee.Geometry.Rectangle(
+            (min_lon + i * strip_w, min_lat, min_lon + (i + 1) * strip_w, max_lat)
+        )
+        label = f"{tile}/SAR/strip{i}"
+        try:
+            lakes_fc = water_mask.reduceToVectors(
+                geometry=strip,
+                scale=DETECT_SCALE_M,
+                geometryType="polygon",
+                eightConnected=False,
+                maxPixels=1e9,
+                bestEffort=True,
+                tileScale=4,
+            )
+            lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
+            lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
+            lakes_fc = lakes_fc.map(add_attributes)
+            gdf_strip = _download_fc(lakes_fc, label)
+            if not gdf_strip.empty:
+                gdfs.append(gdf_strip)
+        except Exception as exc:
+            print(f"[{label}] Strip failed: {exc} — continuing with remaining strips")
 
-    print(f"[{tile}/SAR] Fetching results from GEE ...")
-    import geemap  # noqa: PLC0415 — lazy import avoids Windows handle exhaustion
-    gdf = geemap.ee_to_gdf(lakes_fc)
+    gdf = (
+        gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True), crs="EPSG:4326")
+        if gdfs else gpd.GeoDataFrame()
+    )
 
     if gdf.empty:
         print(f"[{tile}/SAR] No lakes detected via SAR.")

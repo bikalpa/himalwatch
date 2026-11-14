@@ -14,6 +14,11 @@ on:
         required: false
         default: "all"
 
+permissions:
+  contents: read
+  issues: write      # alert fan-out opens GitHub Issues for HIGH alerts
+  actions: write     # keepalive re-enables this workflow (see last job)
+
 jobs:
   # -----------------------------------------------------------------------
   # Job 1: Detect lakes — parallel matrix over all 6 AOI tiles
@@ -21,15 +26,16 @@ jobs:
   detect:
     name: detect / ${{ matrix.tile }}
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     strategy:
       matrix:
         tile: [far_west, karnali, annapurna, langtang, khumbu, kangchenjunga]
       fail-fast: false       # continue other tiles if one fails
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -39,9 +45,13 @@ jobs:
         run: pip install -r pipeline/requirements.txt
 
       - name: Run optical detection
+        timeout-minutes: 60
         run: |
           YEAR="${{ github.event.inputs.year }}"
-          YEAR="${YEAR:-$(date -d 'last year' +%Y)}"
+          # Jun–Sep season is complete from October on → use this year, else last year
+          if [ -z "$YEAR" ]; then
+            if [ "$(date +%-m)" -ge 10 ]; then YEAR=$(date +%Y); else YEAR=$(date -d 'last year' +%Y); fi
+          fi
           echo "Processing tile=${{ matrix.tile }} year=$YEAR"
           python pipeline/gee/lake_detection.py \
             --tile ${{ matrix.tile }} \
@@ -57,9 +67,15 @@ jobs:
           R2_BUCKET_NAME:           ${{ secrets.R2_BUCKET_NAME }}
 
       - name: Run SAR detection (monsoon cloud fallback)
+        # Best-effort: never let SAR block the run (it used to hang 6h and cancel everything)
+        timeout-minutes: 30
+        continue-on-error: true
         run: |
           YEAR="${{ github.event.inputs.year }}"
-          YEAR="${YEAR:-$(date -d 'last year' +%Y)}"
+          # Jun–Sep season is complete from October on → use this year, else last year
+          if [ -z "$YEAR" ]; then
+            if [ "$(date +%-m)" -ge 10 ]; then YEAR=$(date +%Y); else YEAR=$(date -d 'last year' +%Y); fi
+          fi
           python pipeline/gee/sar_detection.py \
             --tile ${{ matrix.tile }} \
             --year $YEAR \
@@ -76,10 +92,11 @@ jobs:
 
       - name: Upload run log artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: run-log-${{ matrix.tile }}
           path: outputs/${{ matrix.tile }}/run_log.json
+          if-no-files-found: ignore
 
   # -----------------------------------------------------------------------
   # Job 2: dbt + export marts — runs after all detect jobs complete
@@ -91,9 +108,9 @@ jobs:
     if: always()             # run even if some tiles failed
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -158,11 +175,11 @@ jobs:
     if: success()
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install boto3 python-dotenv requests
+      - run: pip install boto3 python-dotenv requests pandas pyarrow
       - name: Fan out alerts
         run: python pipeline/alerts/fanout.py
         env:
@@ -174,3 +191,17 @@ jobs:
           RESEND_API_KEY:       ${{ secrets.RESEND_API_KEY }}
           GITHUB_TOKEN:         ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO:          ${{ github.repository }}
+
+  # -----------------------------------------------------------------------
+  # Job 4: Keepalive — GitHub disables scheduled workflows after 60 days
+  # without repo activity (this happened in July 2026). Re-enabling via the
+  # API resets that timer, so the weekly cron keeps firing.
+  # -----------------------------------------------------------------------
+  keepalive:
+    name: keepalive
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/pipeline.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
