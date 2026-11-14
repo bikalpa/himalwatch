@@ -37,10 +37,13 @@ KNOWN = {
 SEARCH_RADIUS_M = 1500
 
 SEASONS = {
-    "Sep15-Nov30": ("09-15", "11-30"),
     "Sep01-Oct31": ("09-01", "10-31"),
-    "Aug15-Oct31": ("08-15", "10-31"),
+    "Sep01-Nov15": ("09-01", "11-15"),
 }
+
+# Glacier-heavy box (Khumbu/Ngozumpa) used to compare over-detection between
+# rules: reports "polygons>=1ha / total km2" in the last column.
+FP_BOX = [86.60, 27.90, 86.95, 28.05]
 
 
 def _collection(aoi, year, season):
@@ -58,31 +61,32 @@ def _slope():
     return ee.Terrain.slope(ee.Image("USGS/SRTMGL1_003"))
 
 
-def _img_water(img, ndwi_t):
-    """Per-image water: NDWI above threshold and dark in NIR + SWIR (not snow/ice)."""
-    ndwi = img.normalizedDifference(["B3", "B8"])
-    return ndwi.gt(ndwi_t).And(img.select("B8").lt(1500)).And(img.select("B11").lt(1000))
+def _img_water(img, ndwi_t, nir_max=None):
+    """Water test for one image/composite: NDWI above threshold, optional NIR cap."""
+    w = img.normalizedDifference(["B3", "B8"]).gt(ndwi_t)
+    if nir_max:
+        w = w.And(img.select("B8").lt(nir_max))
+    return w
+
+
+# rule name -> (kind, ndwi threshold, NIR cap or None)
+RULE_SPECS = {
+    "med_ndwi0.2":          ("med", 0.20, None),
+    "med_ndwi0.2_nir2500":  ("med", 0.20, 2500),
+    "med_ndwi0.15_nir2500": ("med", 0.15, 2500),
+    "freq30_ndwi0.15_nir2500": ("freq", 0.15, 2500),
+}
+RULES = list(RULE_SPECS)
 
 
 def mask_for(rule, aoi, year, season):
+    kind, t, nir = RULE_SPECS[rule]
     col = _collection(aoi, year, season)
-    med = col.median()
     flat = _slope().lt(20)
-    if rule == "med_ndwi0.1_dark_flat":
-        return _img_water(med, 0.1).And(flat)
-    if rule == "med_ndwi0.2_flat":       # no NIR/SWIR darkness test
-        return med.normalizedDifference(["B3", "B8"]).gt(0.2).And(flat)
-    if rule.startswith("freq"):
-        # fraction of clear observations classified as water
-        t = int(rule[4:6]) / 100
-        freq = col.map(lambda i: _img_water(i, 0.1).rename("w")).mean()
-        return freq.gte(t).And(flat)
-    if rule == "n_clear_obs":
-        return None
-    raise ValueError(rule)
-
-
-RULES = ["med_ndwi0.1_dark_flat", "med_ndwi0.2_flat", "freq30", "freq50", "n_clear_obs"]
+    if kind == "med":
+        return _img_water(col.median(), t, nir).And(flat)
+    freq = col.map(lambda i: _img_water(i, t, nir).rename("w")).mean()
+    return freq.gte(0.3).And(flat)
 
 
 def measure(rule, year, season):
@@ -90,10 +94,6 @@ def measure(rule, year, season):
         lat, lon, _ = KNOWN[name]
         pt = ee.Geometry.Point([lon, lat])
         aoi = pt.buffer(4000)
-        if rule == "n_clear_obs":
-            n = _collection(aoi, year, season).select("B3").count().reduceRegion(
-                ee.Reducer.median(), pt.buffer(200), 20).get("B3")
-            return ee.Number(ee.Algorithms.If(n, n, 0)).multiply(1e6)
         m = mask_for(rule, aoi, year, season).selfMask()
         vec = m.reduceToVectors(geometry=aoi, scale=10, maxPixels=1e9,
                                 geometryType="polygon", eightConnected=True)
@@ -101,17 +101,27 @@ def measure(rule, year, season):
         near = near.map(lambda f: f.set("a", f.geometry().area(1)))
         # largest water body touching the search circle
         return ee.Number(ee.Algorithms.If(near.size().gt(0), near.aggregate_max("a"), 0))
+    def fp_box():
+        box = ee.Geometry.Rectangle(FP_BOX)
+        m = mask_for(rule, box, year, season).And(
+            ee.Image("USGS/SRTMGL1_003").gt(3500)).selfMask()
+        vec = m.reduceToVectors(geometry=box, scale=20, maxPixels=1e9,
+                                geometryType="polygon", eightConnected=True)
+        vec = vec.map(lambda f: f.set("a", f.geometry().area(1))).filter(ee.Filter.gte("a", 1e4))
+        return ee.List([vec.size(), vec.aggregate_sum("a")])
+
     names = list(KNOWN)
     try:
-        vals = ee.List([one(n) for n in names]).getInfo()
+        vals, box = ee.List([ee.List([one(n) for n in names]), fp_box()]).getInfo()
+        vals = vals + [f"{box[0]}/{box[1] / 1e6:.1f}km2"]
     except Exception as exc:  # noqa: BLE001
-        return rule, year, season, {n: f"ERR {str(exc)[:40]}" for n in names}
-    return rule, year, season, dict(zip(names, vals))
+        return rule, year, season, {n: f"ERR {str(exc)[:40]}" for n in names + ["box"]}
+    return rule, year, season, dict(zip(names + ["box"], vals))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--years", type=int, nargs="+", default=[2023, 2025, 2026])
+    ap.add_argument("--years", type=int, nargs="+", default=[2022, 2023, 2024, 2025, 2026])
     args = ap.parse_args()
     authenticate_gee(os.getenv("GEE_PROJECT", "himalwatch"))
 
@@ -119,7 +129,8 @@ def main():
     with ThreadPoolExecutor(8) as ex:
         results = list(ex.map(lambda j: measure(*j), jobs))
 
-    names = list(KNOWN)
+    names = list(KNOWN) + ["box"]
+    KNOWN["box"] = (0, 0, 0)
     print("Detected area in km2 (largest water body near each lake)\n")
     print(f"{'season':15} {'rule':26} {'year':4} " + " ".join(f"{n[:11]:>11}" for n in names))
     print(f"{'published ~':46} " + " ".join(f"{KNOWN[n][2]:>11.2f}" for n in names))
