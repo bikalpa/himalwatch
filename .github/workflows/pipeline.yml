@@ -9,6 +9,10 @@ on:
         description: "Season year(s) to process, space separated (default: latest complete Sep–Oct season). Use several for a backfill, e.g. 2019 2020 2021"
         required: false
         default: ""
+      tiles:
+        description: "Region(s) to re-detect, space separated (default: all). Other regions keep their existing data."
+        required: false
+        default: ""
       notify:
         description: "Send alerts (untick for a dry run that only prints them)"
         type: boolean
@@ -54,6 +58,11 @@ jobs:
         run: |
           # No input -> the script picks the latest complete Sep–Oct season.
           YEARS="${{ github.event.inputs.years }}"
+          TILES="${{ github.event.inputs.tiles }}"
+          if [ -n "$TILES" ] && ! echo " $TILES " | grep -q " ${{ matrix.tile }} "; then
+            echo "Skipping ${{ matrix.tile }} (not in: $TILES)"
+            exit 0
+          fi
           if [ -z "$YEARS" ]; then
             python pipeline/gee/lake_detection.py --tile ${{ matrix.tile }} --output-dir ./outputs --export-r2
           else

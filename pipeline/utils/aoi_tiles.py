@@ -15,8 +15,11 @@ NEPAL_HIMALAYA_BBOX = (80.0, 27.5, 88.2, 29.5)
 # Tiles: name → (min_lon, min_lat, max_lon, max_lat)
 # Each tile is ~2° wide — tested to complete within GEE timeout limits
 TILES = {
-    "far_west":   (80.0, 27.5, 82.1, 29.5),   # Api, Saipal Himal
-    "karnali":    (82.1, 27.5, 83.8, 29.5),   # Kanjiroba, Dolpo
+    # West of 83.8°E the high Himalaya sits north of 29.5°N (Api and Saipal are
+    # near 30°N), so these two tiles reach further north. With the old 29.5°N
+    # limit far_west contained no glacial lakes at all.
+    "far_west":   (80.0, 28.5, 82.1, 30.5),   # Api, Saipal Himal, Humla
+    "karnali":    (82.1, 27.5, 83.8, 30.0),   # Kanjiroba, Dolpo, Mugu
     "annapurna":  (83.8, 27.5, 85.1, 29.5),   # Annapurna, Manaslu
     "langtang":   (85.1, 27.5, 86.2, 29.5),   # Langtang, Jugal
     "khumbu":     (86.2, 27.5, 87.2, 29.5),   # Everest, Khumbu

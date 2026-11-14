@@ -108,7 +108,7 @@ def _download_fc(fc: ee.FeatureCollection, label: str = "") -> gpd.GeoDataFrame:
       1. Use fc.getDownloadURL(filetype='GEO_JSON') — GEE generates a
          signed download URL asynchronously; we then fetch it with requests.
          This sidesteps the getInfo() timeout entirely.
-      2. If that fails (e.g. too many features), fall back to geemap.ee_to_gdf()
+      2. If that fails (e.g. too many features), fall back to a plain getInfo()
          which pages via getInfo().
     """
     try:
@@ -125,10 +125,15 @@ def _download_fc(fc: ee.FeatureCollection, label: str = "") -> gpd.GeoDataFrame:
         print(f"  [{label}] Downloaded {len(gdf)} features via URL")
         return gdf
     except Exception as exc:
-        print(f"  [{label}] getDownloadURL failed ({exc}); falling back to geemap ...")
-        import geemap  # noqa: PLC0415
-        gdf = geemap.ee_to_gdf(fc)
-        print(f"  [{label}] Downloaded {len(gdf)} features via geemap")
+        print(f"  [{label}] getDownloadURL failed ({exc}); falling back to getInfo ...")
+        # Not geemap.ee_to_gdf: it calls first().geometry() and crashes on an
+        # empty collection ("Parameter 'feature' is required and may not be null").
+        features = fc.getInfo().get("features") or []
+        if not features:
+            print(f"  [{label}] No lakes in this strip")
+            return gpd.GeoDataFrame()
+        gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+        print(f"  [{label}] Downloaded {len(gdf)} features via getInfo")
         return gdf
 
 
