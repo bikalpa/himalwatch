@@ -37,8 +37,9 @@ KNOWN = {
 SEARCH_RADIUS_M = 1500
 
 SEASONS = {
-    "monsoon_JunSep": ("06-01", "09-30"),
-    "postmon_SepNov": ("09-15", "11-30"),
+    "Sep15-Nov30": ("09-15", "11-30"),
+    "Sep01-Oct31": ("09-01", "10-31"),
+    "Aug15-Oct31": ("08-15", "10-31"),
 }
 
 
@@ -66,26 +67,22 @@ def _img_water(img, ndwi_t):
 def mask_for(rule, aoi, year, season):
     col = _collection(aoi, year, season)
     med = col.median()
-    ndwi = med.normalizedDifference(["B3", "B8"])
-    ndsi = med.normalizedDifference(["B3", "B11"])
     flat = _slope().lt(20)
-    if rule == "current":            # what the pipeline does today
-        return ndwi.gt(0.3).And(ndsi.lt(0.4))
-    if rule == "ndwi0.3":            # drop the NDSI test only
-        return ndwi.gt(0.3)
     if rule == "med_ndwi0.1_dark_flat":
         return _img_water(med, 0.1).And(flat)
-    if rule == "med_ndwi0.2_dark_flat":
-        return _img_water(med, 0.2).And(flat)
-    if rule == "freq50_ndwi0.1_dark_flat":
+    if rule == "med_ndwi0.2_flat":       # no NIR/SWIR darkness test
+        return med.normalizedDifference(["B3", "B8"]).gt(0.2).And(flat)
+    if rule.startswith("freq"):
         # fraction of clear observations classified as water
+        t = int(rule[4:6]) / 100
         freq = col.map(lambda i: _img_water(i, 0.1).rename("w")).mean()
-        return freq.gte(0.5).And(flat)
+        return freq.gte(t).And(flat)
+    if rule == "n_clear_obs":
+        return None
     raise ValueError(rule)
 
 
-RULES = ["current", "ndwi0.3", "med_ndwi0.1_dark_flat",
-         "med_ndwi0.2_dark_flat", "freq50_ndwi0.1_dark_flat"]
+RULES = ["med_ndwi0.1_dark_flat", "med_ndwi0.2_flat", "freq30", "freq50", "n_clear_obs"]
 
 
 def measure(rule, year, season):
@@ -93,6 +90,10 @@ def measure(rule, year, season):
         lat, lon, _ = KNOWN[name]
         pt = ee.Geometry.Point([lon, lat])
         aoi = pt.buffer(4000)
+        if rule == "n_clear_obs":
+            n = _collection(aoi, year, season).select("B3").count().reduceRegion(
+                ee.Reducer.median(), pt.buffer(200), 20).get("B3")
+            return ee.Number(ee.Algorithms.If(n, n, 0)).multiply(1e6)
         m = mask_for(rule, aoi, year, season).selfMask()
         vec = m.reduceToVectors(geometry=aoi, scale=10, maxPixels=1e9,
                                 geometryType="polygon", eightConnected=True)
@@ -110,7 +111,7 @@ def measure(rule, year, season):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--years", type=int, nargs="+", default=[2022, 2024, 2026])
+    ap.add_argument("--years", type=int, nargs="+", default=[2023, 2025, 2026])
     args = ap.parse_args()
     authenticate_gee(os.getenv("GEE_PROJECT", "himalwatch"))
 
