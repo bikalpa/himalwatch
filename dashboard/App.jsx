@@ -776,7 +776,8 @@ function App() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`${R2_BASE}/cache/lakes.json`);
+        // no-cache = always revalidate; browsers otherwise kept showing a stale copy
+        const res = await fetch(`${R2_BASE}/cache/lakes.json`, { cache: "no-cache" });
         if (res.ok) {
           const data        = await res.json();
           const transformed = transformR2Lakes(data);
