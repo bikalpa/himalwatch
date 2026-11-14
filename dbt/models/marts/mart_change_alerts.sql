@@ -4,14 +4,10 @@
 -- Strict criteria to minimise false alerts from seasonal variation.
 --
 -- A lake is here when it is GROWING — see the rule in mart_lake_inventory:
--- seen in >= 3 seasons, seen in the newest season, latest area is a new
--- record (>= 5% above every earlier season), >= 15% and >= 1 ha above the
--- median of earlier seasons.
+-- >= 5 seasons, consistent upward trend (Spearman rho >= 0.9), recent
+-- seasons >= 10% and >= 1 ha above the earliest seasons.
 --
--- Severity by growth over that baseline:
---   LOW:    15–30%
---   MEDIUM: 30–50%
---   HIGH:   >50%
+-- Severity by growth (recent vs early): LOW 10–25%, MEDIUM 25–50%, HIGH > 50%.
 
 {{
   config(materialized='table')
@@ -31,7 +27,8 @@ select
     area_change_sqm,
     area_change_pct,
     baseline_area_sqm,
-    prior_max_area_sqm,
+    recent_area_sqm,
+    trend_rho,
     growth_pct,
 
     -- Volume

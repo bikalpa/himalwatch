@@ -76,18 +76,19 @@ def _exists(s3, key: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def alert_key(a: dict) -> str:
-    """Identity of one notification: re-notify only on a new season or a higher tier."""
-    return f"{a['lake_id']}:{a['latest_detection_year']}:{a['alert_severity']}"
+    """Identity of one notification: a lake is announced once per severity tier."""
+    return f"{a['lake_id']}:{a['alert_severity']}"
 
 
 def enrich(a: dict, gif_ids: set) -> dict:
     lat, lon = float(a["centroid_lat"]), float(a["centroid_lon"])
     a = dict(a)
-    a["name"]    = name_for(lat, lon) or f"Lake {a['lake_id']}"
+    a["name"]    = name_for(lat, lon, float(a["latest_area_sqm"]) / 1e4,
+                            fallback=f"Lake {a['lake_id']}")
     a["map_url"] = f"https://www.google.com/maps/@{lat:.5f},{lon:.5f},2500m/data=!3m1!1e3"
     a["gif_url"] = (f"{PUBLIC_URL}/media/lakes/{a['lake_id']}/growth.gif"
                     if a["lake_id"] in gif_ids else None)
-    a["now_ha"]  = float(a["latest_area_sqm"]) / 1e4
+    a["now_ha"]  = float(a["recent_area_sqm"]) / 1e4
     a["base_ha"] = float(a["baseline_area_sqm"]) / 1e4
     return a
 
@@ -109,7 +110,7 @@ def issue_body(new: list, owner: str, dashboard: str) -> str:
     lines = [
         f"@{owner} — {len(new)} lake(s) newly flagged as **growing** in the {season} season.",
         "",
-        "| Severity | Lake | Area now | Baseline | Growth | Seasons seen | Elevation |",
+        "| Severity | Lake | Recent area | Early area | Growth | Seasons seen | Elevation |",
         "|---|---|---|---|---|---|---|",
     ]
     for a in new:
@@ -127,9 +128,8 @@ def issue_body(new: list, owner: str, dashboard: str) -> str:
                       f"![{a['name']}]({a['gif_url']})", ""]
     lines += [
         "---",
-        "*Growing = seen in ≥ 3 seasons, latest area is a record (≥ 5% above every "
-        "earlier season) and ≥ 15% / ≥ 1 ha above the median of earlier seasons. "
-        "Automated detection — check the imagery before acting on it.*",
+        "*Growing = seen in ≥ 5 seasons, area rising consistently year over year, and recent seasons ≥ 10% and ≥ 1 ha larger than the earliest seasons. Areas are medians of the first / last "
+        "seasons observed. Automated detection — check the imagery before acting on it.*",
     ]
     if dashboard:
         lines.append(f"\n[Open dashboard]({dashboard})")
@@ -156,11 +156,11 @@ def email_html(new: list, dashboard: str) -> str:
 <p>{len(new)} lake(s) newly flagged as <b>growing</b>.</p>
 <table style="width:100%;border-collapse:collapse;font-size:14px">
 <thead><tr style="background:#1a1d27;color:#8892a4;font-size:11px;text-align:left">
-<th style="padding:8px">Severity</th><th style="padding:8px">Lake</th><th style="padding:8px">Area (baseline → now)</th><th style="padding:8px">Growth</th></tr></thead>
+<th style="padding:8px">Severity</th><th style="padding:8px">Lake</th><th style="padding:8px">Area (early → recent)</th><th style="padding:8px">Growth</th></tr></thead>
 <tbody>{rows}</tbody></table>
 {gifs}
 {dash}
-<p style="color:#8892a4;font-size:11px;margin-top:24px">Growing = seen in ≥ 3 seasons, latest area is a record and ≥ 15% / ≥ 1 ha above the median of earlier seasons. Automated detection from Sentinel-2 — verify before acting.</p>
+<p style="color:#8892a4;font-size:11px;margin-top:24px">Growing = seen in ≥ 5 seasons, area rising consistently year over year, and recent seasons ≥ 10% and ≥ 1 ha larger than the earliest seasons. Automated detection from Sentinel-2 — verify before acting.</p>
 </div>"""
 
 
@@ -172,7 +172,7 @@ def atom_feed(alerts: list, repo_url: str) -> str:
     <id>{e(repo_url)}/alerts/{e(alert_key(a))}</id>
     <title>[{e(a['alert_severity'])}] {e(a['name'])} growing {a['growth_pct']:+.0f}%</title>
     <updated>{now}</updated>
-    <summary>{e(a['name'])} ({a['centroid_lat']:.4f}N, {a['centroid_lon']:.4f}E, {e(str(a['tile']))}): {a['base_ha']:.1f} ha baseline, {a['now_ha']:.1f} ha now.</summary>
+    <summary>{e(a['name'])} ({a['centroid_lat']:.4f}N, {a['centroid_lon']:.4f}E, {e(str(a['tile']))}): {a['base_ha']:.1f} ha early, {a['now_ha']:.1f} ha recent.</summary>
     <link href="{e(a['map_url'])}" rel="related"/>
   </entry>""" for a in alerts[:50])
     return f"""<?xml version="1.0" encoding="utf-8"?>

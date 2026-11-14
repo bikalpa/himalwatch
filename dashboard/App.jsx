@@ -329,8 +329,8 @@ function DetailPanel({ lake, onClose }) {
 
         <div className="detail-note">
           Area from Sentinel-2 NDWI (Sep–Oct composite, 20 m). Volume via V&nbsp;=&nbsp;0.104·A<sup>1.42</sup>
-          (Huggel et al., 2002). Growth alert: seen in ≥ 3 seasons, latest area a record and
-          ≥ 15% above the median of earlier seasons.
+          (Huggel et al., 2002). Growth alert: seen in ≥ 5 seasons, area rising consistently,
+          recent seasons ≥ 10% larger than the earliest.
           {!hasMultiYear && " Only one season observed so far."}
         </div>
       </div>

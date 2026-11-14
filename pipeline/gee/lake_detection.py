@@ -79,6 +79,22 @@ def authenticate_gee(project: str):
         ee.Initialize(project=project)
 
 
+def with_retry(fn, label: str = "", attempts: int = 5):
+    """Retry on Earth Engine quota errors (429 / concurrency limit) with backoff."""
+    import time
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+            quota = "429" in msg or "Too Many Requests" in msg or "concurrency" in msg
+            if not quota or i == attempts - 1:
+                raise
+            wait = 30 * (i + 1)
+            print(f"  [{label}] Earth Engine quota hit, retrying in {wait}s ...")
+            time.sleep(wait)
+
+
 # ---------------------------------------------------------------------------
 # GEE download helpers (timeout-safe)
 # ---------------------------------------------------------------------------
@@ -149,16 +165,11 @@ def _detect_in_strip(
         tileScale=4,
     )
 
-    # Filter by minimum area
-    lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
-    lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
-
-    # Simplify geometries to reduce transfer payload (~20m tolerance).
-    # Re-compute area_sqm and re-filter after simplification — some marginal
-    # polygons can collapse to null/degenerate geometry at 20 m tolerance,
-    # causing "Parameter 'feature' is required and may not be null" on getInfo.
-    lakes_fc = lakes_fc.map(lambda f: f.setGeometry(f.geometry().simplify(DETECT_SCALE_M)))
-    lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)))
+    # Filter by minimum area. dropNulls=True: reduceToVectors can emit null
+    # features, which made every strip of some tiles fail with
+    # "Parameter 'feature' is required and may not be null".
+    # (No geometry simplification — it changed areas and produced null geometries.)
+    lakes_fc = lakes_fc.map(lambda f: f.set("area_sqm", f.geometry().area(1)), True)
     lakes_fc = lakes_fc.filter(ee.Filter.gte("area_sqm", MIN_AREA_SQM))
 
     # Add per-lake attributes
@@ -180,9 +191,9 @@ def _detect_in_strip(
             "tile":           tile,
         })
 
-    lakes_fc = lakes_fc.map(add_attributes)
+    lakes_fc = lakes_fc.map(add_attributes, True)
 
-    return _download_fc(lakes_fc, label=label)
+    return with_retry(lambda: _download_fc(lakes_fc, label=label), label)
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +382,7 @@ def main():
 
     project = os.getenv("GEE_PROJECT", "himalwatch")
     print(f"Initialising GEE (project: {project}) ...")
-    authenticate_gee(project)
+    with_retry(lambda: authenticate_gee(project), "auth")
 
     try:
         gdf = detect_lakes(args.tile, args.year)

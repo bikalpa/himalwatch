@@ -178,11 +178,31 @@ def fetch_snapshot(region, year: int) -> bytes | None:
     if col.size().getInfo() == 0:
         return None
     vis = col.median().visualize(bands=["B4", "B3", "B2"], min=0, max=3500, gamma=1.25)
-    url = vis.getThumbURL({"region": aoi, "dimensions": f"{FRAME_PX}x{FRAME_PX}",
-                           "crs": "EPSG:4326", "format": "png"})
-    r = requests.get(url, timeout=120)
-    r.raise_for_status()
-    return r.content
+    try:
+        # computePixels only needs the "compute" permission the pipeline already has.
+        return ee.data.computePixels({
+            "expression": vis,
+            "fileFormat": "PNG",
+            "grid": {
+                "dimensions": {"width": FRAME_PX, "height": FRAME_PX},
+                "affineTransform": {
+                    "scaleX": (region[2] - region[0]) / FRAME_PX, "shearX": 0,
+                    "translateX": region[0],
+                    "shearY": 0, "scaleY": -(region[3] - region[1]) / FRAME_PX,
+                    "translateY": region[3],
+                },
+                "crsCode": "EPSG:4326",
+            },
+        })
+    except Exception as exc:  # noqa: BLE001
+        if "429" in str(exc) or "concurrency" in str(exc):
+            raise
+        # Fallback: thumbnails API (needs the Earth Engine Resource Writer role)
+        url = vis.getThumbURL({"region": aoi, "dimensions": f"{FRAME_PX}x{FRAME_PX}",
+                               "crs": "EPSG:4326", "format": "png"})
+        r = requests.get(url, timeout=120)
+        r.raise_for_status()
+        return r.content
 
 
 # ---------------------------------------------------------------------------
@@ -202,14 +222,15 @@ def process_lake(s3, lake_id: str, hist: pd.DataFrame, latest_year: int) -> str:
         _put(s3, f"{prefix}/meta.json", json.dumps({"region": region}).encode(), "application/json")
 
     c = geoms[-1].centroid
-    title = f"{name_for(c.y, c.x) or f'Lake {lake_id}'} · {c.y:.3f}N {c.x:.3f}E · Sentinel-2"
+    latest_ha = by_year[max(by_year)][1]
+    title = f"{name_for(c.y, c.x, latest_ha, f'Lake {lake_id}')} · {c.y:.3f}N {c.x:.3f}E"
 
     frames = []
     for year in range(FIRST_YEAR, latest_year + 1):
         key = f"{prefix}/{year}.png"
         png = None if (fresh or year == latest_year) else _get(s3, key)
         if png is None:
-            png = fetch_snapshot(region, year)
+            png = with_retry(lambda: fetch_snapshot(region, year), f"{lake_id}/{year}")
             if png is None:
                 continue
             _put(s3, key, png, "image/png")
@@ -228,6 +249,8 @@ def main():
     args = ap.parse_args()
 
     from lake_detection import authenticate_gee
+    global with_retry
+    from lake_detection import with_retry
     authenticate_gee(os.getenv("GEE_PROJECT", "himalwatch"))
 
     s3 = _s3()
@@ -250,7 +273,7 @@ def main():
         except Exception as exc:  # noqa: BLE001 — one lake must not stop the rest
             return f"{lake_id}: FAILED {exc}"
 
-    with ThreadPoolExecutor(6) as ex:
+    with ThreadPoolExecutor(3) as ex:
         for line in ex.map(run, wanted):
             print(" ", line)
 

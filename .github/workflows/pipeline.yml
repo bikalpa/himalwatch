@@ -36,6 +36,7 @@ jobs:
       matrix:
         tile: [far_west, karnali, annapurna, langtang, khumbu, kangchenjunga]
       fail-fast: false       # continue other tiles if one fails
+      max-parallel: 2        # Earth Engine noncommercial projects have a low concurrency limit
 
     steps:
       - uses: actions/checkout@v7
@@ -174,7 +175,7 @@ jobs:
           cache-dependency-path: pipeline/requirements.txt
       - run: pip install -r pipeline/requirements.txt pillow
       - name: Build snapshots and GIFs
-        run: python pipeline/media/lake_gifs.py --max-lakes 60
+        run: python pipeline/media/lake_gifs.py --max-lakes 80
         env:
           GEE_PROJECT:              ${{ secrets.GEE_PROJECT }}
           GEE_SERVICE_ACCOUNT_KEY:  ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}

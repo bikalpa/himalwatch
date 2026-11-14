@@ -17,11 +17,28 @@ KNOWN_LAKES = {
 }
 
 
-def name_for(lat: float, lon: float, max_km: float = 1.5):
-    """Name of the known lake within max_km of this point, else None."""
+def nearest_known(lat: float, lon: float, max_km: float = 1.5):
+    """(name, published_km2) of the known lake within max_km of this point, else None."""
     best, best_d = None, max_km
-    for name, (la, lo, _) in KNOWN_LAKES.items():
+    for name, (la, lo, km2) in KNOWN_LAKES.items():
         d = math.hypot((lat - la) * 111.0, (lon - lo) * 111.0 * math.cos(math.radians(la)))
         if d < best_d:
-            best, best_d = name, d
+            best, best_d = (name, km2), d
     return best
+
+
+def name_for(lat: float, lon: float, area_ha: float = None, fallback: str = "Lake"):
+    """
+    Human name for a detected lake.
+
+    The known lake's own name is used only when the size also matches (within
+    2x of the published area) — small ponds next to a famous lake are labelled
+    "<fallback> (near <name>)" so they are not mistaken for it.
+    """
+    hit = nearest_known(lat, lon)
+    if not hit:
+        return fallback
+    name, km2 = hit
+    if area_ha is None or 0.5 <= (area_ha / 100.0) / km2 <= 2.0:
+        return name
+    return f"{fallback} (near {name})"

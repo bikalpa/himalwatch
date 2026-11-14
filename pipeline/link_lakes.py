@@ -8,9 +8,9 @@ every year and no area trend could ever be computed.
 This step fixes identity after the fact, from geometry alone:
 
   1. Read every raw/lakes/{tile}/{year}/lakes.parquet from R2.
-  2. Within a tile, two detections are the same lake if their polygons
-     overlap (any year pair). Connected components of that overlap graph
-     are lakes. Overlap is used instead of centroid distance because a
+  2. Two detections are the same lake if their polygons overlap (any year
+     pair), or if they touch in the same year (a lake cut by a processing
+     strip/tile seam). Connected components of that graph are lakes. Overlap is used instead of centroid distance because a
      growing lake moves its own centroid.
   3. lake_id = hash of the component's earliest-year centroid, so ids are
      deterministic and survive re-runs.
@@ -48,6 +48,8 @@ MIN_OVERLAP_FRAC = 0.10
 # Only link detections made with the current method (Sep–Oct composite).
 # Older files in R2 used a Jun–Sep window and a broken water test.
 SEASON_START_MM = "09-01"
+# Pieces of one lake split by a strip/tile seam lie within this distance (~10 m).
+SEAM_TOLERANCE_DEG = 0.0001
 
 
 # ---------------------------------------------------------------------------
@@ -79,59 +81,70 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
     raw = raw[~raw["geom"].apply(lambda g: g.is_empty)].reset_index(drop=True)
 
     out = []
-    for tile, grp in raw.groupby("tile"):
-        grp = grp.reset_index(drop=True)
-        geoms = grp["geom"].tolist()
-        parent = list(range(len(geoms)))
-        tree = STRtree(geoms)
-        left, right = tree.query(geoms, predicate="intersects")
-        for i, j in zip(left, right):
-            if i >= j:
-                continue
-            inter = geoms[i].intersection(geoms[j]).area
-            if inter >= MIN_OVERLAP_FRAC * min(geoms[i].area, geoms[j].area):
-                parent[_find(parent, i)] = _find(parent, j)
-        grp["component"] = [_find(parent, i) for i in range(len(geoms))]
+    grp = raw.reset_index(drop=True)
+    geoms = grp["geom"].tolist()
+    years = grp["detection_year"].tolist()
+    parent = list(range(len(geoms)))
+    tree = STRtree(geoms)
 
-        for _, comp in grp.groupby("component"):
-            first_year = comp["detection_year"].min()
-            anchor = unary_union(
-                comp.loc[comp["detection_year"] == first_year, "geom"].tolist()
-            ).centroid
-            lake_id = hashlib.sha1(
-                f"{tile}:{anchor.y:.4f},{anchor.x:.4f}".encode()
-            ).hexdigest()[:8]
+    # 1. Same lake across years: polygons overlap.
+    left, right = tree.query(geoms, predicate="intersects")
+    for i, j in zip(left, right):
+        if i >= j:
+            continue
+        inter = geoms[i].intersection(geoms[j]).area
+        if inter >= MIN_OVERLAP_FRAC * min(geoms[i].area, geoms[j].area):
+            parent[_find(parent, i)] = _find(parent, j)
 
-            for year, yr in comp.groupby("detection_year"):
-                geom = unary_union(yr["geom"].tolist())
-                area = float(yr["area_sqm"].sum())
-                w = yr["area_sqm"] / area
+    # 2. Same lake, same year, cut in two by a processing seam (longitude
+    #    strips and tile edges): the pieces touch but do not overlap.
+    left, right = tree.query([g.buffer(SEAM_TOLERANCE_DEG) for g in geoms],
+                             predicate="intersects")
+    for i, j in zip(left, right):
+        if i < j and years[i] == years[j]:
+            parent[_find(parent, i)] = _find(parent, j)
 
-                def wavg(col):
-                    if col not in yr or yr[col].isna().all():
-                        return None
-                    return float((yr[col].astype(float) * w).sum())
+    grp["component"] = [_find(parent, i) for i in range(len(geoms))]
 
-                vol = float(estimate_volume_m3(area))
-                out.append({
-                    "lake_id":        lake_id,
-                    "tile":           tile,
-                    "detection_year": int(year),
-                    "geometry_wkt":   geom.wkt,
-                    "centroid_lat":   geom.centroid.y,
-                    "centroid_lon":   geom.centroid.x,
-                    "area_sqm":       area,
-                    "area_ha":        area / 10_000,
-                    "mean_elevation": wavg("mean_elevation"),
-                    "mean_ndwi":      wavg("mean_ndwi"),
-                    "mean_ndsi":      wavg("mean_ndsi"),
-                    "volume_m3":      vol,
-                    "volume_mcm":     vol / 1e6,
-                    "season_start":   str(yr["season_start"].iloc[0]),
-                    "season_end":     str(yr["season_end"].iloc[0]),
-                    "detected_at":    str(yr["detected_at"].max()),
-                    "polygon_count":  len(yr),
-                })
+    for _, comp in grp.groupby("component"):
+        first_year = comp["detection_year"].min()
+        anchor = unary_union(
+            comp.loc[comp["detection_year"] == first_year, "geom"].tolist()
+        ).centroid
+        lake_id = hashlib.sha1(f"{anchor.y:.4f},{anchor.x:.4f}".encode()).hexdigest()[:8]
+        # A lake straddling a tile edge belongs to the tile holding most of it
+        tile = comp.groupby("tile")["area_sqm"].sum().idxmax()
+
+        for year, yr in comp.groupby("detection_year"):
+            geom = unary_union(yr["geom"].tolist())
+            area = float(yr["area_sqm"].sum())
+            w = yr["area_sqm"] / area
+
+            def wavg(col):
+                if col not in yr or yr[col].isna().all():
+                    return None
+                return float((yr[col].astype(float) * w).sum())
+
+            vol = float(estimate_volume_m3(area))
+            out.append({
+                "lake_id":        lake_id,
+                "tile":           tile,
+                "detection_year": int(year),
+                "geometry_wkt":   geom.wkt,
+                "centroid_lat":   geom.centroid.y,
+                "centroid_lon":   geom.centroid.x,
+                "area_sqm":       area,
+                "area_ha":        area / 10_000,
+                "mean_elevation": wavg("mean_elevation"),
+                "mean_ndwi":      wavg("mean_ndwi"),
+                "mean_ndsi":      wavg("mean_ndsi"),
+                "volume_m3":      vol,
+                "volume_mcm":     vol / 1e6,
+                "season_start":   str(yr["season_start"].iloc[0]),
+                "season_end":     str(yr["season_end"].iloc[0]),
+                "detected_at":    str(yr["detected_at"].max()),
+                "polygon_count":  len(yr),
+            })
 
     cols = ["lake_id", "tile", "detection_year", "geometry_wkt", "centroid_lat",
             "centroid_lon", "area_sqm", "area_ha", "mean_elevation", "mean_ndwi",
