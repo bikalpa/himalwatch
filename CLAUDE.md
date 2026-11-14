@@ -68,32 +68,31 @@ Update `CONFIG.r2BaseUrl` in `dashboard/app.js` to point to the real R2 public U
 
 ### Data Flow
 ```
-GEE (Sentinel-2) → lake_detection.py → GeoJSON/Parquet → R2 (raw/)
-                                                              ↓
-                                                   dbt (DuckDB reads R2)
-                                                              ↓
-                                              R2 (marts/*.parquet)
-                                             /                \
-                              FastAPI (server-side DuckDB)   Dashboard (DuckDB-Wasm in browser)
+GEE (Sentinel-2) → lake_detection.py → raw/lakes/{tile}/{year}/lakes.parquet (R2)
+                                              ↓
+                        link_lakes.py → linked/lake_detections.parquet   (stable lake_id)
+                                              ↓
+                              dbt (DuckDB) → marts/*.parquet
+                                              ↓
+              lake_gifs.py → media/lakes/{lake_id}/{year}.png + growth.gif
+                                              ↓
+        export_worker_json.py → cache/*.json (dashboard)   fanout.py → alerts
 ```
 
 ### Key Design Decisions
 
-**lake_id stability**: Lake IDs are derived by hashing centroid coordinates rounded to 4 decimal places (~11m precision). This creates stable IDs across pipeline runs for the same lake, but can split/merge lakes that shift between seasons — a known limitation.
+**Detection rule**: Sep 1 – Oct 31 median composite (post-monsoon: clear, lakes at max extent, not yet frozen), NDWI > 0.2, slope < 20°, elevation > 3500 m, min area 1 ha. Chosen with `pipeline/gee/validate_known_lakes.py` (run the `validate-detection` workflow) against 8 well-known lakes for 2022–2026 — re-run it before changing any threshold. Do NOT add an NDSI "not snow" test: open water has a high NDSI and the old `NDSI < 0.4` test removed nearly every real lake. A NIR cap was also tested and rejected (drops turbid lakes like Imja).
 
-**Detection thresholds**: NDWI > 0.3 with elevation > 3500m and minimum area 10,000 sqm (1 ha). The 0.3 NDWI threshold is calibrated for high-altitude Himalayan water bodies. Lowering it increases false positives from shadow/snowmelt.
+**lake_id stability**: the `lake_id` in raw files is a random per-run UUID and is ignored. `pipeline/link_lakes.py` links polygons across years by overlap (not centroid distance — a growing lake moves its centroid) and derives a deterministic id from the earliest-year centroid. Split/merged lakes are summed per year. Adding an earlier year can change an id.
 
-**Snow vs. water discrimination**: `cloud_masking.py` implements NDSI-based discrimination. Snow has NDSI > 0.4; water does not. SCL masking excludes class 11 (snow) by default.
+**Season year**: a season is processed once its window has closed (from 1 Nov). Weekly runs outside Nov re-process the same season and stay silent.
 
-**Storage**: All data lives in Cloudflare R2 (`himalwatch-data` bucket). Raw outputs go to `raw/lakes/{region}/{year}/`. dbt writes marts to `marts/`. Geometry is stored as WKT strings (not binary GeoJSON) so DuckDB can read it without spatial extensions.
+**Storage**: Cloudflare R2 (`himalwatch-data`). Geometry is WKT so DuckDB needs no spatial extension. Per-lake season snapshots (`media/lakes/{id}/{year}.png`) are kept permanently and reused; only the newest season is re-fetched.
 
-**dbt adapter**: Uses `dbt-duckdb` with `httpfs` extension to read Parquet directly from R2 over S3-compatible API. No data warehouse — DuckDB is the query engine both locally (dbt) and in production (FastAPI + DuckDB-Wasm).
+### Growth alerts
+A lake is flagged GROWING when: seen in ≥ 3 seasons, seen in the newest season for its tile, latest area ≥ 5% above every earlier season, and ≥ 15% and ≥ 1 ha above the median of earlier seasons (the baseline). Severity by growth over baseline: LOW 15–30%, MEDIUM 30–50%, HIGH > 50%. Shrinking lakes are not alerted (single bad years are common).
 
-### Alert Severity Tiers
-- LOW: 15–30% area change
-- MEDIUM: 30–50% area change  
-- HIGH: >50% area change
-- Requires ≥2 detections and latest detection within 90 days
+`pipeline/alerts/fanout.py` sends one digest per run for alerts not yet notified (state in R2 `alerts/notified.json`): a GitHub issue that @-mentions the repo owner (GitHub emails it), plus an HTML email via Resend if `RESEND_API_KEY` and `ALERT_EMAIL_TO` secrets are set.
 
 ## Environment Variables
 
@@ -105,13 +104,15 @@ R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_BUCKET_NAME=himalwatch-data
 GEE_SERVICE_ACCOUNT_KEY=  # base64-encoded JSON, for CI only
+RESEND_API_KEY=           # optional — HTML alert email
+ALERT_EMAIL_TO=           # optional — comma-separated recipients (keep in secrets, repo is public)
 ```
 
 ## Deployment
 
 | Component | Platform | Trigger |
 |-----------|----------|---------|
-| Pipeline | GitHub Actions | Weekly cron (Sun 02:00 UTC) + push to `pipeline/` |
+| Pipeline | GitHub Actions | Weekly cron (Sun 02:00 UTC) or manual dispatch (`years` for backfill, `notify` off for a dry run). A keepalive job re-enables the workflow each run — GitHub disables idle scheduled workflows after 60 days. |
 | dbt models | GitHub Actions | After pipeline job |
 | API | Render | Auto-deploy on push to `main` |
 | Dashboard | Vercel | Auto-deploy on push to `main` |
@@ -120,4 +121,4 @@ GEE_SERVICE_ACCOUNT_KEY=  # base64-encoded JSON, for CI only
 
 - The JavaScript script (`lake_detection.js`) runs in the GEE Code Editor at `code.earthengine.google.com` — it cannot be run from the terminal.
 - The Python port (`lake_detection.py`) uses `earthengine-api` + `geemap` and requires prior `earthengine authenticate` or a service account key.
-- Summer season (June–September) imagery is used to avoid snow confusion. Cloud cover is highest during monsoon — this is the primary data quality constraint.
+- Post-monsoon (Sep–Oct) imagery is used: monsoon (Jun–Sep) composites were too cloudy to give repeatable lake areas.
