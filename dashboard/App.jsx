@@ -133,7 +133,8 @@ function transformR2Lakes(geojson) {
     const lon  = p.centroid_lon ?? (f.geometry?.coordinates?.[0] ?? 86.5);
     const lat  = p.centroid_lat ?? (f.geometry?.coordinates?.[1] ?? 28.0);
     const area = p.latest_area_ha ?? 0;
-    const chg  = p.area_change_pct ?? 0;
+    // Same figure the alert digest reports (recent vs earliest seasons)
+    const chg  = p.growth_pct ?? p.area_change_pct ?? 0;
     const base = chg !== -100 ? area / (1 + chg / 100) : area;
     const named = lookupNamedLake(lon, lat);
     // Real per-season history from the pipeline: [[year, area_ha], ...]
@@ -660,7 +661,7 @@ function AlertsView({ alerts, onSelectLake }) {
         <div className="alerts-title">Change Alerts</div>
         <div className="alerts-sub">
           {alerts.length > 0
-            ? `${alerts.length} lakes with significant area change · threshold ≥15%, ≥2 detections`
+            ? `${alerts.length} lakes growing steadily · 5+ seasons, recent area ≥10% above earliest`
             : "Alerts are generated after ≥2 years of detection data. Check back after the next pipeline run."}
         </div>
       </div>
