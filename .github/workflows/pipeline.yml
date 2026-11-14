@@ -162,7 +162,7 @@ jobs:
     needs: transform
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    if: needs.transform.result == 'success'
+    if: always() && needs.transform.result == 'success'
     continue-on-error: true      # alerts still go out if imagery fails
 
     steps:

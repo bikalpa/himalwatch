@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 from shapely.geometry import shape
 
 from cloud_masking import prepare_s2_collection, water_mask
-from export_to_r2 import upload_all, update_lakes_master
+from export_to_r2 import upload_all
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.aoi_tiles import get_tile_bbox
@@ -281,50 +281,17 @@ def detect_lakes(tile: str, year: int) -> gpd.GeoDataFrame:
 # Stable lake_id assignment
 # ---------------------------------------------------------------------------
 
-def assign_lake_ids(gdf: gpd.GeoDataFrame, master_path: Path) -> gpd.GeoDataFrame:
+def assign_lake_ids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
-    Assign stable lake_ids by spatial join against the master lake registry.
+    Give each detected polygon a per-run id.
 
-    For each new detection:
-      - If a lake exists in master within 50m of centroid → use its lake_id
-      - Otherwise → assign new UUID and add to master
-
-    The 50m tolerance (5 S2 pixels) accounts for inter-annual centroid drift
-    caused by varying water levels and cloud coverage patterns.
+    These ids are NOT stable across runs or years and must not be used for
+    trends. Stable identity is assigned afterwards from geometry by
+    pipeline/link_lakes.py, which sees all years at once. (The previous
+    centroid-distance match against a master registry never worked in CI and
+    crashed on ties.)
     """
-    # Build centroid GeoDataFrame for spatial join
-    centroids = gdf.copy()
-    centroids = centroids.to_crs("EPSG:32645")  # UTM Zone 45N covers Nepal
-    centroids.geometry = centroids.geometry.centroid
-
-    if master_path.exists():
-        master_df = pd.read_parquet(master_path)
-        master_pts = gpd.GeoDataFrame(
-            master_df,
-            geometry=gpd.GeoSeries.from_wkt(master_df["centroid_wkt"], crs="EPSG:4326"),
-        ).to_crs("EPSG:32645")
-
-        # Spatial join with 50m buffer
-        joined = gpd.sjoin_nearest(
-            centroids,
-            master_pts[["lake_id", "geometry"]],
-            how="left",
-            max_distance=50,
-            distance_col="match_dist_m",
-        )
-        gdf["lake_id"] = joined["lake_id"].values
-
-    else:
-        gdf["lake_id"] = None
-
-    # New lakes get a fresh UUID
-    new_mask = gdf["lake_id"].isna()
-    gdf.loc[new_mask, "lake_id"] = [str(uuid.uuid4())[:8] for _ in range(new_mask.sum())]
-
-    new_count = new_mask.sum()
-    if new_count:
-        print(f"  {new_count} new lakes assigned IDs (not in master)")
-
+    gdf["lake_id"] = [str(uuid.uuid4())[:8] for _ in range(len(gdf))]
     return gdf
 
 
@@ -406,13 +373,11 @@ def main():
     print(f"Initialising GEE (project: {project}) ...")
     authenticate_gee(project)
 
-    master_path = args.output_dir / "lakes_master.parquet"
-
     try:
         gdf = detect_lakes(args.tile, args.year)
 
         if not gdf.empty:
-            gdf = assign_lake_ids(gdf, master_path)
+            gdf = assign_lake_ids(gdf)
             geojson_path, parquet_path, csv_path = save_outputs(
                 gdf, args.tile, args.year, args.output_dir
             )
@@ -421,7 +386,6 @@ def main():
             if args.export_r2:
                 print("Uploading to R2 ...")
                 upload_all(geojson_path, parquet_path, csv_path, args.tile, args.year)
-                update_lakes_master(gdf, master_path)
                 print("R2 upload complete.")
 
         log = write_run_log(
