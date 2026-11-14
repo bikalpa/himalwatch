@@ -48,18 +48,37 @@ def _upload_json(key: str, data: dict):
         Key=key,
         Body=body,
         ContentType="application/json",
-        CacheControl="public, max-age=21600",  # 6h
+        CacheControl="public, max-age=3600",
     )
     print(f"  Uploaded cache -> {key} ({len(body):,} bytes)")
 
 
-def build_lakes_geojson(inv: pd.DataFrame) -> dict:
+def _gif_lake_ids() -> set:
+    """lake_ids that have a growth GIF in R2."""
+    ids = set()
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix="media/lakes/"):
+        for obj in page.get("Contents", []):
+            parts = obj["Key"].split("/")
+            if len(parts) == 4 and parts[3] == "growth.gif":
+                ids.add(parts[2])
+    return ids
+
+
+def build_lakes_geojson(inv: pd.DataFrame, linked: pd.DataFrame, gif_ids: set) -> dict:
     """Convert inventory DataFrame to GeoJSON FeatureCollection."""
+    # Real per-season history: {lake_id: [[year, area_ha], ...]}
+    series = {
+        lake_id: [[int(y), round(float(a), 2)] for y, a in
+                  zip(g["detection_year"], g["area_ha"])]
+        for lake_id, g in linked.sort_values("detection_year").groupby("lake_id")
+    }
     features = []
     for _, row in inv.iterrows():
         props = {k: (None if pd.isna(v) else v)
                  for k, v in row.items()
                  if k != "geometry_wkt"}
+        props["series"]  = series.get(row["lake_id"], [])
+        props["has_gif"] = row["lake_id"] in gif_ids
         features.append({
             "type": "Feature",
             "geometry": {
@@ -105,10 +124,12 @@ if __name__ == "__main__":
     print("Downloading mart tables from R2 ...")
     inv    = _download_parquet("marts/mart_lake_inventory.parquet")
     alerts = _download_parquet("marts/mart_change_alerts.parquet")
-    print(f"  {len(inv)} lakes, {len(alerts)} alerts")
+    linked = _download_parquet("linked/lake_detections.parquet")
+    gif_ids = _gif_lake_ids()
+    print(f"  {len(inv)} lakes, {len(alerts)} alerts, {len(gif_ids)} GIFs")
 
     print("Building JSON cache files ...")
-    _upload_json("cache/lakes.json",  build_lakes_geojson(inv))
+    _upload_json("cache/lakes.json",  build_lakes_geojson(inv, linked, gif_ids))
     _upload_json("cache/alerts.json", build_alerts_json(alerts))
     _upload_json("cache/stats.json",  build_stats_json(inv, alerts))
 

@@ -31,7 +31,7 @@ import requests
 from dotenv import load_dotenv
 from shapely.geometry import shape
 
-from cloud_masking import prepare_s2_collection, water_not_snow_mask
+from cloud_masking import prepare_s2_collection, water_mask
 from export_to_r2 import upload_all, update_lakes_master
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -44,11 +44,12 @@ load_dotenv()
 # Constants
 # ---------------------------------------------------------------------------
 
-NDWI_THRESHOLD   = 0.3       # McFeeters (1996)
 ELEV_MIN_M       = 3500      # Below this elevation → not a glacial lake
 MIN_AREA_SQM     = 10_000    # 1 hectare minimum
-SEASON_START_MM  = "06-01"
-SEASON_END_MM    = "09-30"
+# Post-monsoon window: clear skies, lakes at maximum extent and not yet frozen.
+# (Jun–Sep monsoon imagery was too cloudy to give repeatable areas.)
+SEASON_START_MM  = "09-01"
+SEASON_END_MM    = "10-31"
 
 # Timeout-avoidance settings
 DETECT_SCALE_M   = 20        # 20m instead of 10m → 4× fewer pixels, same ha-scale accuracy
@@ -134,18 +135,18 @@ def _detect_in_strip(
     aoi = ee.Geometry.Rectangle(strip_bbox)
     label = f"{tile}/strip{strip_idx}"
 
-    water_mask = water_not_snow_mask(composite)
     elev_mask  = dem.gt(ELEV_MIN_M)
-    final_mask = water_mask.And(elev_mask).selfMask()
+    final_mask = water_mask(composite).And(elev_mask).selfMask()
 
     print(f"  [{label}] Vectorising (scale={DETECT_SCALE_M}m) ...")
     lakes_fc = final_mask.reduceToVectors(
         geometry=aoi,
         scale=DETECT_SCALE_M,
         geometryType="polygon",
-        eightConnected=False,
+        eightConnected=True,
         maxPixels=1e9,
         bestEffort=True,
+        tileScale=4,
     )
 
     # Filter by minimum area
@@ -382,13 +383,19 @@ def write_run_log(
 # CLI
 # ---------------------------------------------------------------------------
 
+def default_season_year(today=None) -> int:
+    """Latest season whose Sep–Oct imagery window has closed (from 1 Nov on)."""
+    today = today or datetime.now(timezone.utc)
+    return today.year if today.month >= 11 else today.year - 1
+
+
 def main():
     parser = argparse.ArgumentParser(description="HimalWatch lake detection pipeline")
     parser.add_argument("--tile",       required=True,
                         help="AOI tile name (e.g. khumbu, langtang)")
     parser.add_argument("--year",       type=int,
-                        default=datetime.now().year - 1,
-                        help="Year to process (default: last complete year)")
+                        default=default_season_year(),
+                        help="Season year to process (default: latest complete Sep–Oct season)")
     parser.add_argument("--output-dir", type=Path, default=Path("./outputs"),
                         help="Local directory for outputs")
     parser.add_argument("--export-r2",  action="store_true",

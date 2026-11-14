@@ -1,340 +1,294 @@
 """
 HimalWatch — Alert Fan-out
 
-Runs after the pipeline + dbt step. Diffs the new mart_change_alerts
-against the previous run's snapshot and fans out NEW high-severity alerts to:
+Runs after dbt + GIF generation. Notifies about lakes that are GROWING
+(see the rule in dbt/models/marts/mart_lake_inventory.sql) and that have not
+been notified before for this season + severity.
 
-  1. GitHub Issues  — public audit trail, auto-created for HIGH alerts
-  2. RSS/Atom feed  — alerts.atom written to R2, subscribable by researchers
-  3. Email          — via Resend API (opt-in, free tier 100/day)
+Channels:
+  1. GitHub Issue — one digest issue per run, @-mentioning the repo owner.
+     GitHub emails the owner, so this is the zero-setup email path.
+  2. Email via Resend — optional, a nicer HTML email with the GIFs inline.
+     Needs secrets RESEND_API_KEY and ALERT_EMAIL_TO.
+  3. Atom feed — alerts.atom in R2 with all current alerts.
 
-"New" means: alert exists in today's mart but NOT in yesterday's snapshot.
-This prevents re-notifying for ongoing alerts on every weekly run.
+What has been notified is remembered in R2 (alerts/notified.json), so weekly
+re-runs over the same season stay silent.
 
-Required env vars:
+Env:
   R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME
-  R2_PUBLIC_URL          — public bucket URL for links in notifications
-  GITHUB_TOKEN           — provided automatically by GitHub Actions
-  GITHUB_REPO            — e.g. "bikalpa/himalwatch"
-  RESEND_API_KEY         — optional; skip email if not set
+  R2_PUBLIC_URL      public bucket URL (links + GIFs)
+  GITHUB_TOKEN, GITHUB_REPO
+  RESEND_API_KEY     optional
+  ALERT_EMAIL_TO     optional, comma-separated recipients
+  ALERT_EMAIL_FROM   optional, default "HimalWatch <onboarding@resend.dev>"
+                     (Resend's shared sender: delivers only to the address the
+                     Resend account was created with — fine for personal alerts)
+  DASHBOARD_URL      optional
+  DRY_RUN=1          print instead of sending; do not update state
 """
+from __future__ import annotations
 
+import html
 import io
 import json
 import os
 import sys
 from datetime import datetime, timezone
-from email.utils import formatdate
 from pathlib import Path
-from typing import List
 
-import boto3
 import pandas as pd
 import requests
-from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.known_lakes import name_for  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# R2 client
-# ---------------------------------------------------------------------------
+BUCKET      = os.getenv("R2_BUCKET_NAME", "himalwatch-data")
+PUBLIC_URL  = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
+STATE_KEY   = "alerts/notified.json"
+DRY_RUN     = os.getenv("DRY_RUN") == "1"
+MAX_GIFS    = 8      # GIFs embedded per notification
+SEV_ORDER   = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+SEV_COLOUR  = {"HIGH": "#ef4444", "MEDIUM": "#f97316", "LOW": "#eab308"}
+
 
 def _s3():
+    import boto3
     return boto3.client(
         "s3",
         endpoint_url=os.environ["R2_ENDPOINT_URL"],
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
     )
 
-BUCKET     = os.getenv("R2_BUCKET_NAME", "himalwatch-data")
-PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "")
 
-
-def _download_parquet(key: str) -> pd.DataFrame:
-    buf = io.BytesIO()
-    _s3().download_fileobj(BUCKET, key, buf)
-    buf.seek(0)
-    return pd.read_parquet(buf)
-
-
-def _key_exists(key: str) -> bool:
+def _exists(s3, key: str) -> bool:
     try:
-        _s3().head_object(Bucket=BUCKET, Key=key)
+        s3.head_object(Bucket=BUCKET, Key=key)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
 # ---------------------------------------------------------------------------
-# Diff — find alerts that are new since last run
+# Pure helpers (unit-testable without network)
 # ---------------------------------------------------------------------------
 
-def find_new_alerts(current: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compare current alerts against the most recent previous snapshot.
-    Returns rows in current that are not in the previous run.
-    """
-    # Find latest previous snapshot
-    today = datetime.now(timezone.utc).date().isoformat()
-    paginator = _s3().get_paginator("list_objects_v2")
-    snapshots = []
-
-    for page in paginator.paginate(Bucket=BUCKET, Prefix="marts/snapshots/"):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if "mart_change_alerts" in key and today not in key:
-                snapshots.append(key)
-
-    if not snapshots:
-        print("No previous snapshot found — treating all current alerts as new.")
-        return current
-
-    # Use the most recent snapshot
-    latest_snap_key = sorted(snapshots)[-1]
-    print(f"Comparing against: {latest_snap_key}")
-
-    try:
-        prev = _download_parquet(latest_snap_key)
-        prev_ids = set(prev["lake_id"].tolist())
-        new_alerts = current[~current["lake_id"].isin(prev_ids)]
-        print(f"  {len(current)} current alerts, {len(prev_ids)} previous, "
-              f"{len(new_alerts)} NEW")
-        return new_alerts
-    except Exception as e:
-        print(f"Could not load previous snapshot: {e} — treating all as new.")
-        return current
+def alert_key(a: dict) -> str:
+    """Identity of one notification: re-notify only on a new season or a higher tier."""
+    return f"{a['lake_id']}:{a['latest_detection_year']}:{a['alert_severity']}"
 
 
-# ---------------------------------------------------------------------------
-# Channel 1 — GitHub Issues
-# ---------------------------------------------------------------------------
-
-def create_github_issue(alert: dict):
-    token = os.getenv("GITHUB_TOKEN")
-    repo  = os.getenv("GITHUB_REPO")
-    if not token or not repo:
-        print("  Skipping GitHub Issue — GITHUB_TOKEN or GITHUB_REPO not set.")
-        return
-
-    chg = f"{alert.get('area_change_pct', 0):+.1f}%"
-    vol = f"{alert.get('volume_change_mcm', 0):+.3f} MCM"
-    run = alert.get("days_since_observation", "?")
-    sev = alert["alert_severity"]
-
-    title = f"[{sev}] Lake {alert['lake_id']} area change {chg} — {alert['tile']}"
-    body  = f"""## Glacial Lake Alert — {sev} Severity
-
-**Lake ID**: `{alert['lake_id']}`
-**Tile**: {alert['tile']}
-**Coordinates**: {alert['centroid_lat']:.4f}°N, {alert['centroid_lon']:.4f}°E
-**Elevation**: {alert.get('mean_elevation', '?'):.0f} m
-
-### Change Summary
-| Metric | Value |
-|--------|-------|
-| Area change | **{chg}** |
-| Volume change | **{vol}** |
-| First detected | {alert.get('first_detected_date', '?')} |
-| Latest detection | {alert.get('latest_detection_date', '?')} |
-| Days since observation | {run} |
-
-### Areas at Risk
-- Runout distance estimate: {alert.get('runout_km', '?')} km
-- Settlements in runout zone: {alert.get('settlements_in_runout', '?')}
-- Population estimate: {alert.get('population_estimate', '?')}
-
-### Data Links
-- [Lake inventory]({PUBLIC_URL}/marts/mart_lake_inventory.parquet)
-- [All alerts]({PUBLIC_URL}/marts/mart_change_alerts.parquet)
-
----
-*Auto-generated by HimalWatch pipeline. Verify against optical imagery before action.*
-*Alert threshold: area change >30% with ≥2 detections within 90 days.*
-"""
-
-    resp = requests.post(
-        f"https://api.github.com/repos/{repo}/issues",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept":        "application/vnd.github+json",
-        },
-        json={
-            "title":  title,
-            "body":   body,
-            "labels": ["alert", sev.lower(), alert["tile"]],
-        },
-        timeout=15,
-    )
-
-    if resp.status_code == 201:
-        print(f"  GitHub Issue created: {resp.json()['html_url']}")
-    else:
-        print(f"  GitHub Issue failed: {resp.status_code} {resp.text[:200]}")
+def enrich(a: dict, gif_ids: set) -> dict:
+    lat, lon = float(a["centroid_lat"]), float(a["centroid_lon"])
+    a = dict(a)
+    a["name"]    = name_for(lat, lon) or f"Lake {a['lake_id']}"
+    a["map_url"] = f"https://www.google.com/maps/@{lat:.5f},{lon:.5f},2500m/data=!3m1!1e3"
+    a["gif_url"] = (f"{PUBLIC_URL}/media/lakes/{a['lake_id']}/growth.gif"
+                    if a["lake_id"] in gif_ids else None)
+    a["now_ha"]  = float(a["latest_area_sqm"]) / 1e4
+    a["base_ha"] = float(a["baseline_area_sqm"]) / 1e4
+    return a
 
 
-# ---------------------------------------------------------------------------
-# Channel 2 — RSS/Atom feed
-# ---------------------------------------------------------------------------
+def select_new(alerts: list, notified: dict) -> list:
+    new = [a for a in alerts if alert_key(a) not in notified]
+    return sorted(new, key=lambda a: (SEV_ORDER.get(a["alert_severity"], 9), -float(a["growth_pct"])))
 
-def update_rss_feed(all_alerts: List[dict]):
-    """Write an Atom feed of current alerts to R2."""
-    now_rfc  = formatdate(usegmt=True)
-    now_iso  = datetime.now(timezone.utc).isoformat()
-    repo_url = f"https://github.com/{os.getenv('GITHUB_REPO', 'bikalpa/himalwatch')}"
 
-    entries = ""
-    for a in all_alerts[:20]:  # Atom spec: latest 20
-        chg = f"{a.get('area_change_pct', 0):+.1f}%"
-        sev = a["alert_severity"]
-        entries += f"""
+def subject_for(new: list) -> str:
+    high = sum(a["alert_severity"] == "HIGH" for a in new)
+    n = len(new)
+    s = f"HimalWatch: {n} glacial lake{'s' if n != 1 else ''} growing"
+    return s + (f" ({high} HIGH)" if high else "")
+
+
+def issue_body(new: list, owner: str, dashboard: str) -> str:
+    season = max(int(a["latest_detection_year"]) for a in new)
+    lines = [
+        f"@{owner} — {len(new)} lake(s) newly flagged as **growing** in the {season} season.",
+        "",
+        "| Severity | Lake | Area now | Baseline | Growth | Seasons seen | Elevation |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for a in new:
+        lines.append(
+            f"| **{a['alert_severity']}** | [{a['name']}]({a['map_url']}) "
+            f"({a['centroid_lat']:.4f}°N, {a['centroid_lon']:.4f}°E, {a['tile']}) "
+            f"| {a['now_ha']:.1f} ha | {a['base_ha']:.1f} ha | **{a['growth_pct']:+.0f}%** "
+            f"| {int(a['detection_count'])} | {float(a['mean_elevation']):.0f} m |"
+        )
+    gifs = [a for a in new if a["gif_url"]][:MAX_GIFS]
+    if gifs:
+        lines += ["", "### Satellite time-lapse (Sentinel-2, Sep–Oct each year)", ""]
+        for a in gifs:
+            lines += [f"**{a['name']}** — {a['growth_pct']:+.0f}%", "",
+                      f"![{a['name']}]({a['gif_url']})", ""]
+    lines += [
+        "---",
+        "*Growing = seen in ≥ 3 seasons, latest area is a record (≥ 5% above every "
+        "earlier season) and ≥ 15% / ≥ 1 ha above the median of earlier seasons. "
+        "Automated detection — check the imagery before acting on it.*",
+    ]
+    if dashboard:
+        lines.append(f"\n[Open dashboard]({dashboard})")
+    return "\n".join(lines)
+
+
+def email_html(new: list, dashboard: str) -> str:
+    e = html.escape
+    rows = "".join(
+        f"""<tr>
+  <td style="padding:8px;border-bottom:1px solid #2a2d3a"><b style="color:{SEV_COLOUR.get(a['alert_severity'], '#fff')}">{e(a['alert_severity'])}</b></td>
+  <td style="padding:8px;border-bottom:1px solid #2a2d3a"><a href="{e(a['map_url'])}" style="color:#60a5fa">{e(a['name'])}</a><br><span style="color:#8892a4;font-size:12px">{a['centroid_lat']:.4f}°N {a['centroid_lon']:.4f}°E · {e(str(a['tile']))}</span></td>
+  <td style="padding:8px;border-bottom:1px solid #2a2d3a">{a['base_ha']:.1f} → {a['now_ha']:.1f} ha</td>
+  <td style="padding:8px;border-bottom:1px solid #2a2d3a"><b>{a['growth_pct']:+.0f}%</b></td>
+</tr>""" for a in new)
+    gifs = "".join(
+        f"""<p style="margin:20px 0 6px"><b>{e(a['name'])}</b> — {a['growth_pct']:+.0f}%</p>
+<img src="{e(a['gif_url'])}" width="480" style="max-width:100%;border-radius:6px" alt="{e(a['name'])} time-lapse">"""
+        for a in [a for a in new if a["gif_url"]][:MAX_GIFS])
+    dash = f'<p><a href="{e(dashboard)}" style="color:#60a5fa">Open dashboard</a></p>' if dashboard else ""
+    return f"""<div style="font-family:sans-serif;background:#0f1117;color:#e2e8f0;padding:24px;max-width:640px">
+<h2 style="color:#60a5fa;margin:0 0 4px">HimalWatch</h2>
+<p style="color:#8892a4;margin:0 0 16px">Glacial lake monitoring · Nepal Himalaya</p>
+<p>{len(new)} lake(s) newly flagged as <b>growing</b>.</p>
+<table style="width:100%;border-collapse:collapse;font-size:14px">
+<thead><tr style="background:#1a1d27;color:#8892a4;font-size:11px;text-align:left">
+<th style="padding:8px">Severity</th><th style="padding:8px">Lake</th><th style="padding:8px">Area (baseline → now)</th><th style="padding:8px">Growth</th></tr></thead>
+<tbody>{rows}</tbody></table>
+{gifs}
+{dash}
+<p style="color:#8892a4;font-size:11px;margin-top:24px">Growing = seen in ≥ 3 seasons, latest area is a record and ≥ 15% / ≥ 1 ha above the median of earlier seasons. Automated detection from Sentinel-2 — verify before acting.</p>
+</div>"""
+
+
+def atom_feed(alerts: list, repo_url: str) -> str:
+    e = html.escape
+    now = datetime.now(timezone.utc).isoformat()
+    entries = "".join(f"""
   <entry>
-    <id>{repo_url}/issues/auto/{a['lake_id']}</id>
-    <title>[{sev}] Lake {a['lake_id']} area {chg} — {a['tile']}</title>
-    <updated>{now_iso}</updated>
-    <summary>
-      Glacial lake {a['lake_id']} in {a['tile']} tile shows {chg} area change.
-      Elevation: {a.get('mean_elevation', '?'):.0f}m.
-      Volume change: {a.get('volume_change_mcm', '?'):+.3f} MCM.
-      Alert severity: {sev}.
-    </summary>
-    <link href="{PUBLIC_URL}/marts/mart_change_alerts.parquet" rel="related"/>
-  </entry>"""
-
-    feed = f"""<?xml version="1.0" encoding="utf-8"?>
+    <id>{e(repo_url)}/alerts/{e(alert_key(a))}</id>
+    <title>[{e(a['alert_severity'])}] {e(a['name'])} growing {a['growth_pct']:+.0f}%</title>
+    <updated>{now}</updated>
+    <summary>{e(a['name'])} ({a['centroid_lat']:.4f}N, {a['centroid_lon']:.4f}E, {e(str(a['tile']))}): {a['base_ha']:.1f} ha baseline, {a['now_ha']:.1f} ha now.</summary>
+    <link href="{e(a['map_url'])}" rel="related"/>
+  </entry>""" for a in alerts[:50])
+    return f"""<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>HimalWatch — Glacial Lake Change Alerts</title>
-  <subtitle>Automated alerts for anomalous glacial lake area change in Nepal Himalaya</subtitle>
-  <id>{repo_url}</id>
-  <link href="{repo_url}" rel="alternate"/>
-  <link href="{PUBLIC_URL}/alerts.atom" rel="self"/>
-  <updated>{now_iso}</updated>
-  <author><name>HimalWatch Pipeline</name></author>
-  {entries}
+  <title>HimalWatch — Growing glacial lakes</title>
+  <id>{e(repo_url)}</id>
+  <link href="{e(repo_url)}" rel="alternate"/>
+  <link href="{e(PUBLIC_URL)}/alerts.atom" rel="self"/>
+  <updated>{now}</updated>
+  <author><name>HimalWatch Pipeline</name></author>{entries}
 </feed>"""
 
-    _s3().put_object(
-        Bucket=BUCKET,
-        Key="alerts.atom",
-        Body=feed.encode(),
-        ContentType="application/atom+xml",
-        CacheControl="public, max-age=3600",
-    )
-    print(f"  RSS feed updated -> {PUBLIC_URL}/alerts.atom")
-
 
 # ---------------------------------------------------------------------------
-# Channel 3 — Email via Resend
+# Channels
 # ---------------------------------------------------------------------------
 
-def send_email_alerts(new_alerts: List[dict]):
-    api_key = os.getenv("RESEND_API_KEY")
-    if not api_key:
-        print("  Skipping email — RESEND_API_KEY not set.")
-        return
+def create_issue(title: str, body: str) -> bool:
+    token, repo = os.getenv("GITHUB_TOKEN"), os.getenv("GITHUB_REPO")
+    if not token or not repo:
+        print("  Skipping GitHub Issue — GITHUB_TOKEN or GITHUB_REPO not set.")
+        return False
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    url = f"https://api.github.com/repos/{repo}/issues"
+    resp = requests.post(url, headers=headers, timeout=20,
+                         json={"title": title, "body": body, "labels": ["alert"]})
+    if resp.status_code == 422:      # label problem — retry bare
+        resp = requests.post(url, headers=headers, timeout=20, json={"title": title, "body": body})
+    if resp.status_code == 201:
+        print(f"  GitHub Issue created: {resp.json()['html_url']}")
+        return True
+    print(f"  GitHub Issue failed: {resp.status_code} {resp.text[:300]}")
+    return False
 
-    if not new_alerts:
-        return
 
-    high   = [a for a in new_alerts if a["alert_severity"] == "HIGH"]
-    medium = [a for a in new_alerts if a["alert_severity"] == "MEDIUM"]
-
-    subject = f"HimalWatch: {len(new_alerts)} new alert(s)"
-    if high:
-        subject = f"HimalWatch: {len(high)} HIGH severity glacial lake alert(s)"
-
-    rows = "".join(f"""
-    <tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #2a2d3a">
-        <b style="color:{'#ef4444' if a['alert_severity']=='HIGH' else '#f97316'}">[{a['alert_severity']}]</b>
-        {a['lake_id']}
-      </td>
-      <td style="padding:6px 8px;border-bottom:1px solid #2a2d3a">{a['tile']}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #2a2d3a">{a.get('area_change_pct', 0):+.1f}%</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #2a2d3a">{a.get('mean_elevation', '?'):.0f} m</td>
-    </tr>""" for a in new_alerts)
-
-    html = f"""
-    <div style="font-family:sans-serif;background:#0f1117;color:#e2e8f0;padding:24px;max-width:600px">
-      <h2 style="color:#3b82f6;margin-bottom:4px">HimalWatch</h2>
-      <p style="color:#8892a4;margin-bottom:16px">Glacial Lake Monitoring · Nepal Himalaya</p>
-      <p>{len(new_alerts)} new lake alert(s) detected in the latest pipeline run.</p>
-      <table style="width:100%;border-collapse:collapse;margin-top:16px">
-        <thead>
-          <tr style="background:#1a1d27">
-            <th style="padding:8px;text-align:left;font-size:11px;color:#8892a4">Lake</th>
-            <th style="padding:8px;text-align:left;font-size:11px;color:#8892a4">Tile</th>
-            <th style="padding:8px;text-align:left;font-size:11px;color:#8892a4">Change</th>
-            <th style="padding:8px;text-align:left;font-size:11px;color:#8892a4">Elevation</th>
-          </tr>
-        </thead>
-        <tbody>{rows}</tbody>
-      </table>
-      <p style="margin-top:16px">
-        <a href="{PUBLIC_URL}/marts/mart_change_alerts.parquet"
-           style="color:#3b82f6">Download full alerts Parquet</a>
-      </p>
-      <p style="color:#8892a4;font-size:11px;margin-top:24px">
-        Auto-generated by HimalWatch. Data under CC BY 4.0.
-      </p>
-    </div>"""
-
+def send_email(subject: str, body_html: str) -> bool:
+    key = os.getenv("RESEND_API_KEY")
+    to = [t.strip() for t in os.getenv("ALERT_EMAIL_TO", "").split(",") if t.strip()]
+    if not key or not to:
+        print("  Skipping Resend email — RESEND_API_KEY / ALERT_EMAIL_TO not set "
+              "(the GitHub Issue notification is the email in that case).")
+        return False
     resp = requests.post(
         "https://api.resend.com/emails",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "from":    "HimalWatch <alerts@himalwatch.earth>",
-            "to":      ["bikalpa@gmail.com"],
-            "subject": subject,
-            "html":    html,
-        },
-        timeout=15,
+        headers={"Authorization": f"Bearer {key}"},
+        json={"from": os.getenv("ALERT_EMAIL_FROM") or "HimalWatch <onboarding@resend.dev>",
+              "to": to, "subject": subject, "html": body_html},
+        timeout=20,
     )
-
     if resp.status_code in (200, 201):
-        print(f"  Email sent: {resp.json().get('id')}")
-    else:
-        print(f"  Email failed: {resp.status_code} {resp.text[:200]}")
+        print(f"  Email sent ({len(to)} recipient(s)): {resp.json().get('id')}")
+        return True
+    print(f"  Email failed: {resp.status_code} {resp.text[:300]}")
+    return False
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def main():
     print("=== HimalWatch Alert Fan-out ===")
+    s3 = _s3()
+
+    buf = io.BytesIO()
+    s3.download_fileobj(BUCKET, "marts/mart_change_alerts.parquet", buf)
+    buf.seek(0)
+    current = pd.read_parquet(buf).to_dict("records")
+    print(f"{len(current)} lake(s) currently flagged as growing.")
+
+    gif_ids = {a["lake_id"] for a in current
+               if _exists(s3, f"media/lakes/{a['lake_id']}/growth.gif")}
+    current = [enrich(a, gif_ids) for a in current]
 
     try:
-        current = _download_parquet("marts/mart_change_alerts.parquet")
-        print(f"Loaded {len(current)} current alerts.")
-    except Exception as e:
-        print(f"No alerts parquet found: {e}")
-        sys.exit(0)
+        notified = json.loads(s3.get_object(Bucket=BUCKET, Key=STATE_KEY)["Body"].read())
+    except Exception:  # noqa: BLE001 — first run
+        notified = {}
 
-    if current.empty:
-        print("No active alerts — nothing to fan out.")
-        sys.exit(0)
+    new = select_new(current, notified)
+    print(f"{len(new)} new since last notification.")
 
-    new_alerts = find_new_alerts(current)
-    all_alerts = current.to_dict("records")
-    new_list   = new_alerts.to_dict("records") if not new_alerts.empty else []
+    repo = os.getenv("GITHUB_REPO", "")
+    repo_url = f"https://github.com/{repo}"
+    dashboard = os.getenv("DASHBOARD_URL", "")
 
-    print(f"\n{len(new_list)} new alert(s) to notify.")
+    if not DRY_RUN:
+        s3.put_object(Bucket=BUCKET, Key="alerts.atom",
+                      Body=atom_feed(current, repo_url).encode(),
+                      ContentType="application/atom+xml",
+                      CacheControl="public, max-age=3600")
 
-    # Channel 1: GitHub Issues (HIGH only — avoid issue spam)
-    for alert in new_list:
-        if alert["alert_severity"] == "HIGH":
-            print(f"Creating GitHub Issue for {alert['lake_id']} ...")
-            create_github_issue(alert)
+    if not new:
+        print("Nothing new — no notification sent.")
+        return
 
-    # Channel 2: RSS feed (all current alerts)
-    print("Updating RSS feed ...")
-    update_rss_feed(all_alerts)
+    subject = subject_for(new)
+    body = issue_body(new, repo.split("/")[0] or "owner", dashboard)
+    if DRY_RUN:
+        print(subject, "\n", body)
+        return
 
-    # Channel 3: Email (new HIGH + MEDIUM only)
-    notify = [a for a in new_list if a["alert_severity"] in ("HIGH", "MEDIUM")]
-    if notify:
-        print(f"Sending email for {len(notify)} alert(s) ...")
-        send_email_alerts(notify)
+    sent_issue = create_issue(subject, body)
+    sent_email = send_email(subject, email_html(new, dashboard))
 
-    print("\nFan-out complete.")
+    if sent_issue or sent_email:
+        stamp = datetime.now(timezone.utc).isoformat()
+        notified.update({alert_key(a): stamp for a in new})
+        s3.put_object(Bucket=BUCKET, Key=STATE_KEY,
+                      Body=json.dumps(notified, indent=1).encode(),
+                      ContentType="application/json")
+        print("Notification state saved.")
+    else:
+        print("No channel succeeded — will retry next run.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

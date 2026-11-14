@@ -3,15 +3,15 @@
 -- Lakes with anomalous area change that warrant attention.
 -- Strict criteria to minimise false alerts from seasonal variation.
 --
--- Inclusion criteria (ALL must be true):
---   1. Area change > 15% between first and latest detection
---   2. At least 2 detections (prevents single-observation noise)
---   3. Latest detection within 90 days (stale alerts are not actionable)
+-- A lake is here when it is GROWING — see the rule in mart_lake_inventory:
+-- seen in >= 3 seasons, seen in the newest season, latest area is a new
+-- record (>= 5% above every earlier season), >= 15% and >= 1 ha above the
+-- median of earlier seasons.
 --
--- Severity tiers:
---   LOW:    15–30% change
---   MEDIUM: 30–50% change
---   HIGH:   >50% change
+-- Severity by growth over that baseline:
+--   LOW:    15–30%
+--   MEDIUM: 30–50%
+--   HIGH:   >50%
 
 {{
   config(materialized='table')
@@ -30,6 +30,9 @@ select
     latest_area_sqm,
     area_change_sqm,
     area_change_pct,
+    baseline_area_sqm,
+    prior_max_area_sqm,
+    growth_pct,
 
     -- Volume
     latest_volume_mcm,
@@ -38,6 +41,7 @@ select
     -- Temporal
     first_detected_date,
     latest_detection_date,
+    latest_detection_year,
     detection_count,
 
     -- Severity
@@ -61,4 +65,4 @@ order by
         when 'MEDIUM' then 2
         when 'LOW'    then 3
     end,
-    abs(area_change_pct) desc
+    growth_pct desc

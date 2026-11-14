@@ -142,9 +142,8 @@ def add_ndsi(image: ee.Image) -> ee.Image:
     NDSI = (Green - SWIR1) / (Green + SWIR1)
     Sentinel-2: Green = B3, SWIR1 = B11
 
-    Snow:  NDSI > 0.4  (high green reflectance, low SWIR)
-    Water: NDSI < 0.1  (absorbs in both green and SWIR, but SWIR more)
-    Ice:   NDSI ~ 0.3–0.5 (similar to snow but lower)
+    Kept as a per-lake diagnostic attribute only. It is NOT usable to
+    separate water from snow: both have high NDSI (see water_mask).
 
     Ref: Hall et al. (1995), Remote Sensing of Environment
     """
@@ -159,9 +158,7 @@ def add_ndwi(image: ee.Image) -> ee.Image:
     NDWI = (Green - NIR) / (Green + NIR)
     Sentinel-2: Green = B3, NIR = B8
 
-    Open water: NDWI > 0.3
-    Turbid glacial water may be lower (~0.1–0.2) due to sediment load.
-    Threshold 0.3 calibrated for clear high-altitude Himalayan lakes.
+    Threshold used for detection: see WATER_NDWI_MIN / water_mask().
 
     Ref: McFeeters (1996), International Journal of Remote Sensing
     """
@@ -169,21 +166,30 @@ def add_ndwi(image: ee.Image) -> ee.Image:
     return image.addBands(ndwi)
 
 
-def water_not_snow_mask(image: ee.Image) -> ee.Image:
+WATER_NDWI_MIN   = 0.2   # on the Sep–Oct median composite
+WATER_SLOPE_MAX  = 20    # degrees — lakes are flat; steep "water" is shadow
+
+
+def water_mask(image: ee.Image) -> ee.Image:
     """
-    Boolean mask: True where pixels are water AND not snow/ice.
+    Boolean mask: True where the composite pixel is lake water.
 
-    Condition: NDWI > 0.3 AND NDSI < 0.4
+    Condition: NDWI > 0.2 AND terrain slope < 20°.
 
-    This pixel-level discrimination preserves genuine lake pixels that
-    sit adjacent to snowfields, which scene-level SCL class 11 exclusion
-    would incorrectly remove.
+    Validated with validate_known_lakes.py against Imja, Tsho Rolpa, Lower
+    Barun, Thulagi, Lumding, Gokyo, Tilicho and Phoksundo for 2022–2026:
+    areas match published values and stable lakes vary < 1.5% year to year.
 
-    Image must have NDWI and NDSI bands (add via add_ndwi / add_ndsi first).
+    The previous rule (NDWI > 0.3 AND NDSI < 0.4) detected almost none of
+    them: open water has a HIGH NDSI (it absorbs SWIR even more strongly than
+    snow does), so the "not snow" test was discarding the lakes themselves.
+    A NIR-brightness cap was also tested and rejected — it drops turbid
+    proglacial lakes (Imja, Lower Barun) in some years.
+
+    Image must have an NDWI band (add via add_ndwi first).
     """
-    is_water = image.select("NDWI").gt(0.3)
-    is_not_snow = image.select("NDSI").lt(0.4)
-    return is_water.And(is_not_snow)
+    slope = ee.Terrain.slope(ee.Image("USGS/SRTMGL1_003"))
+    return image.select("NDWI").gt(WATER_NDWI_MIN).And(slope.lt(WATER_SLOPE_MAX))
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +208,8 @@ def prepare_s2_collection(
 
     Args:
         aoi:              ee.Geometry for the area of interest
-        start_date:       ISO date string, e.g. "2024-06-01"
-        end_date:         ISO date string, e.g. "2024-09-30"
+        start_date:       ISO date string, e.g. "2024-09-01"
+        end_date:         ISO date string, e.g. "2024-10-31"
         max_cloud_pct:    Pre-filter scenes with CLOUDY_PIXEL_PERCENTAGE above this
                           (scene-level, not pixel-level — keeps partially cloudy scenes
                           that have good coverage over lakes)

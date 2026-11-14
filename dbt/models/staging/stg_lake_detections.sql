@@ -1,7 +1,8 @@
 -- HimalWatch staging model
--- Reads all raw Parquet files from R2 across all tiles and years.
--- Casts types, derives detection_date, filters junk rows.
--- Materialised as VIEW so dbt always reads the latest R2 data.
+-- Reads the linked detections written by pipeline/link_lakes.py: one row per
+-- (lake_id, detection_year), with lake_id stable across years.
+-- (The raw per-run files carry a fresh random id each run, so they cannot be
+-- used for trends directly.)
 
 {{
   config(materialized='view')
@@ -12,7 +13,6 @@ select
     tile,
     geometry_wkt,
 
-    -- Cast numeric columns explicitly (Parquet may read as object on some versions)
     cast(area_sqm       as double) as area_sqm,
     cast(area_ha        as double) as area_ha,
     cast(centroid_lat   as double) as centroid_lat,
@@ -24,28 +24,22 @@ select
     cast(volume_mcm     as double) as volume_mcm,
 
     -- detection_date = last day of the compositing season
-    -- (imagery window closes at season_end, so this is the most accurate "observed" date)
-    cast(season_end as date) as detection_date,
+    cast(season_end as date)        as detection_date,
     cast(detection_year as integer) as detection_year,
 
     season_start,
     season_end,
     detected_at,
 
-    -- Record when dbt loaded this row
     current_timestamp as loaded_at
 
 from read_parquet(
-    's3://{{ env_var("R2_BUCKET_NAME", "himalwatch-data") }}/raw/lakes/*/*/lakes.parquet',
-    hive_partitioning = false,
-    union_by_name = true
+    's3://{{ env_var("R2_BUCKET_NAME", "himalwatch-data") }}/linked/lake_detections.parquet'
 )
 
 where
-    -- Remove rows with missing critical fields
-    lake_id        is not null
-    and geometry_wkt  is not null
-    and centroid_lat  is not null
-    and centroid_lon  is not null
-    -- Enforce minimum area (belt-and-suspenders — pipeline already filters)
+    lake_id          is not null
+    and geometry_wkt is not null
+    and centroid_lat is not null
+    and centroid_lon is not null
     and area_sqm >= 10000

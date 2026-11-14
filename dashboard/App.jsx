@@ -136,6 +136,8 @@ function transformR2Lakes(geojson) {
     const chg  = p.area_change_pct ?? 0;
     const base = chg !== -100 ? area / (1 + chg / 100) : area;
     const named = lookupNamedLake(lon, lat);
+    // Real per-season history from the pipeline: [[year, area_ha], ...]
+    const hist  = Array.isArray(p.series) ? p.series : [];
 
     return {
       id:       p.lake_id,
@@ -148,25 +150,18 @@ function transformR2Lakes(geojson) {
       n:        p.detection_count ?? 1,
       sev:      p.alert_severity || null,
       tile:     p.tile || "",
-      series:   named?.series ?? [Math.max(0, base), area],
+      series:   hist.length ? hist.map(h => h[1]) : [Math.max(0, base), area],
+      years:    hist.length ? hist.map(h => h[0]) : null,
+      growth:   p.growth_pct ?? null,
+      gif:      p.has_gif ? `${R2_BASE}/media/lakes/${p.lake_id}/growth.gif` : null,
       lastDate: adjustDate(p.latest_detection_date) || null,
       _source:  "live",
     };
   });
 
-  // Fill in DEMO_LAKES for any tile not yet covered by R2 data.
-  // This keeps the map showing all Nepal regions while the pipeline backfills.
-  const r2Tiles = new Set(r2Lakes.map(l => l.tile));
-  const demoFill = DEMO_LAKES
-    .filter(l => !r2Tiles.has(l.tile))
-    .map(l => ({ ...l, _source: "demo" }));
-
-  if (demoFill.length > 0) {
-    const missing = [...new Set(demoFill.map(l => l.tile))].join(", ");
-    console.info(`[HimalWatch] R2 tiles: ${[...r2Tiles].join(", ")} | Demo fill: ${missing}`);
-  }
-
-  return [...r2Lakes, ...demoFill];
+  // Live data is shown on its own — never mixed with demo lakes, so every
+  // lake and alert on screen is a real detection.
+  return r2Lakes;
 }
 
 function toGeoJSON(lakes) {
@@ -185,7 +180,8 @@ const fmt    = (v, d=1) => (v == null || isNaN(v)) ? "—" : Number(v).toFixed(d
 const fmtPct = (v)      => v == null ? "—" : `${v > 0 ? "+" : ""}${Number(v).toFixed(1)}%`;
 const chgClass = (v)    => v > 15 ? "pos" : v < -10 ? "neg" : "neu";
 
-function seriesYears(series) {
+function seriesYears(series, years) {
+  if (years && years.length === series?.length) return years.length > 1 ? years : [years[0], years[0]];
   if (!series || series.length < 2) return ["—"];
   if (series.length === 2) return ["Baseline", "Latest"];
   // Map series length onto YEARS array
@@ -265,9 +261,9 @@ function DetailPanel({ lake, onClose }) {
   const l = lake;
 
   const chgCol   = l.chg > 15 ? "var(--high)" : l.chg < -10 ? "var(--success)" : "var(--text)";
-  const lastObs  = l.lastDate || "2024-09-30";
-  const yLabels  = seriesYears(l.series);
-  const hasMultiYear = l.series?.length > 2;
+  const lastObs  = l.lastDate || "—";
+  const yLabels  = seriesYears(l.series, l.years);
+  const hasMultiYear = l.years ? l.years.length > 1 : l.series?.length > 2;
 
   return (
     <div className="detail-panel open" role="dialog" aria-modal="false" aria-label={`${l.name} details`}>
@@ -317,14 +313,25 @@ function DetailPanel({ lake, onClose }) {
         <div className="chart-box">
           <AreaChart series={l.series} yearLabels={yLabels}/>
           <div className="chart-years">
-            {yLabels.map(y => <span key={y}>{y}</span>)}
+            {yLabels.map((y, i) => <span key={i}>{y}</span>)}
           </div>
         </div>
 
+        {l.gif && (
+          <>
+            <div className="section-label">Satellite time-lapse · Sentinel-2, Sep–Oct</div>
+            <a href={l.gif} target="_blank" rel="noopener">
+              <img src={l.gif} alt={`${l.name} satellite time-lapse by year`} loading="lazy"
+                   style={{width:"100%",borderRadius:6,display:"block",marginBottom:12}}/>
+            </a>
+          </>
+        )}
+
         <div className="detail-note">
-          Area from Sentinel-2 NDWI at 20 m resolution. Volume via V&nbsp;=&nbsp;0.0298·A<sup>1.37</sup>
-          (Huggel et al., 2002). Alert threshold: &gt;30% area change, ≥ 2 detections, within 90 days.
-          {!hasMultiYear && " Multi-year trend available after additional pipeline runs."}
+          Area from Sentinel-2 NDWI (Sep–Oct composite, 20 m). Volume via V&nbsp;=&nbsp;0.104·A<sup>1.42</sup>
+          (Huggel et al., 2002). Growth alert: seen in ≥ 3 seasons, latest area a record and
+          ≥ 15% above the median of earlier seasons.
+          {!hasMultiYear && " Only one season observed so far."}
         </div>
       </div>
     </div>

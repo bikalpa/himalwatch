@@ -22,18 +22,9 @@ import ee
 sys.path.insert(0, str(Path(__file__).parent))
 from cloud_masking import mask_combined  # noqa: E402
 from lake_detection import authenticate_gee  # noqa: E402
+from utils.known_lakes import KNOWN_LAKES  # noqa: E402
 
-# name: (lat, lon, published area km2 — approximate, for orientation)
-KNOWN = {
-    "Imja Tsho":     (27.899, 86.923, 1.5),
-    "Tsho Rolpa":    (27.862, 86.477, 1.6),
-    "Lower Barun":   (27.798, 87.095, 2.0),
-    "Thulagi":       (28.490, 84.485, 0.9),
-    "Lumding Tsho":  (27.779, 86.614, 1.2),
-    "Gokyo (Dudh)":  (27.953, 86.694, 0.43),
-    "Tilicho":       (28.688, 83.854, 4.8),
-    "Phoksundo":     (29.210, 82.958, 4.9),
-}
+KNOWN = dict(KNOWN_LAKES)
 SEARCH_RADIUS_M = 1500
 
 SEASONS = {

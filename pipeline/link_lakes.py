@@ -45,6 +45,9 @@ LINKED_KEY = "linked/lake_detections.parquet"
 # Ignore sliver contacts: polygons must share at least this fraction of the
 # smaller one to count as the same lake.
 MIN_OVERLAP_FRAC = 0.10
+# Only link detections made with the current method (Sep–Oct composite).
+# Older files in R2 used a Jun–Sep window and a broken water test.
+SEASON_START_MM = "09-01"
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +69,9 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
     Returns one row per (lake_id, detection_year).
     """
     raw = raw[raw["geometry_wkt"].notna() & raw["area_sqm"].notna()].copy()
+    raw = raw[raw["season_start"].astype(str).str.endswith(SEASON_START_MM)]
+    if raw.empty:
+        raise SystemExit(f"No detections for the {SEASON_START_MM} season window yet.")
     raw["detection_year"] = raw["detection_year"].astype(int)
     raw = raw.reset_index(drop=True)
     raw["geom"] = raw["geometry_wkt"].apply(wkt.loads)
