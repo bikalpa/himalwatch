@@ -51,7 +51,9 @@ PAUSE_S    = 1.5
 AI_PAUSE_S = 6.0         # between AI calls: stays under free-tier requests-per-minute limits
 MAX_ITEMS  = 40          # kept per lake
 BUDGET_S   = 14 * 60         # stop collecting after this long and save what there is
-AI_TIMEOUT_S = 90            # one AI call; a stuck call must not eat the whole budget
+# Free Gemini models are often overloaded (503); the next one is tried in turn.
+GEMINI_FALLBACKS = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+AI_TIMEOUT_S = 60            # one AI call; a stuck call must not eat the whole budget
 AI_MAX_FAILS = 3             # consecutive failed AI calls before falling back to keyword rules
 REVIEWED   = "_ai_reviewed"  # store key: [lake_id whose stored items went through the AI review]
 REJECTED   = "_rejected"  # store key: {lake_id: [normalised titles judged not relevant]}
@@ -191,23 +193,34 @@ def _strip_additional(schema):
     return schema
 
 
+_gemini_model = None   # the model that last answered in this run
+
+
 def _ask_gemini(client, prompt: str):
     """JSON answer from Gemini's Interactions API, or None (try again next run)."""
-    try:
-        interaction = client.interactions.create(
-            model=ai_model("gemini"),
-            input=prompt,
-            response_format={"type": "text", "mime_type": "application/json",
-                             "schema": _strip_additional(AI_SCHEMA)},
-            generation_config={"thinking_level": "low"},
-        )
-        if interaction.status != "completed":
-            print(f"  AI review ended with status {interaction.status}; candidates wait for the next run")
-            return None
-        return json.loads(interaction.output_text)
-    except Exception as ex:  # noqa: BLE001 — free tier: rate limits are routine, never fatal
-        print(f"  AI review failed ({type(ex).__name__}: {str(ex)[:120]}); candidates wait for the next run")
-        return None
+    global _gemini_model
+    first = _gemini_model or ai_model("gemini")
+    for model in [first] + [m for m in GEMINI_FALLBACKS if m != first]:
+        try:
+            interaction = client.interactions.create(
+                model=model,
+                input=prompt,
+                response_format={"type": "text", "mime_type": "application/json",
+                                 "schema": _strip_additional(AI_SCHEMA)},
+                generation_config={"thinking_level": "low"},
+            )
+            if interaction.status != "completed":
+                print(f"  AI review ({model}) ended with status {interaction.status}")
+                continue
+            answer = json.loads(interaction.output_text)
+            if model != _gemini_model:
+                print(f"  AI review: using {model}")
+                _gemini_model = model      # stay on the model that answers
+            return answer
+        except Exception as ex:  # noqa: BLE001 — free tier: overload and rate limits are routine, never fatal
+            print(f"  AI review ({model}) failed ({type(ex).__name__}: {str(ex)[:100]})")
+    print("  no Gemini model answered; candidates wait for the next run")
+    return None
 
 
 def _ask_anthropic(client, prompt: str):

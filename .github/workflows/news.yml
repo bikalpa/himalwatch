@@ -1,0 +1,45 @@
+name: News refresh
+
+# Collects news and coverage for named lakes and refreshes the dashboard
+# cache, without touching Earth Engine or sending alerts. The weekly pipeline
+# does the same as part of its publish job; this is for running it on its own.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  news:
+    name: news + dashboard cache
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install boto3 python-dotenv requests pandas pyarrow anthropic google-genai
+      - name: Collect news and coverage for named lakes
+        timeout-minutes: 25
+        run: python pipeline/news/lake_news.py
+        env:
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          NEWS_PROVIDER:        ${{ vars.NEWS_PROVIDER }}
+          NEWS_MODEL:           ${{ vars.NEWS_MODEL }}
+          PYTHONUNBUFFERED:     "1"
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
+      - name: Refresh dashboard cache
+        run: python dbt/export_worker_json.py
+        env:
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}

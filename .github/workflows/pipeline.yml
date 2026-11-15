@@ -211,7 +211,7 @@ jobs:
       - name: Collect news and coverage for named lakes
         # Best effort: a blocked or slow news search must never stop the alerts.
         continue-on-error: true
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: python pipeline/news/lake_news.py
         env:
           # Optional: an AI model judges relevance and duplicates. Either key
