@@ -50,6 +50,7 @@ RSS        = "https://news.google.com/rss/search"
 PAUSE_S    = 1.5
 AI_PAUSE_S = 6.0         # between AI calls: stays under free-tier requests-per-minute limits
 MAX_ITEMS  = 40          # kept per lake
+REVIEWED   = "_ai_reviewed"  # store key: [lake_id whose stored items went through the AI review]
 REJECTED   = "_rejected"  # store key: {lake_id: [normalised titles judged not relevant]}
 AI_DEFAULT_MODEL = {"gemini": "gemini-3.8-flash", "anthropic": "claude-opus-5-5"}
 AI_SCHEMA  = {
@@ -299,6 +300,7 @@ def collect(named: dict, store: dict, limit: int | None = None,
     for lake_id, name in named.items():
         by_name.setdefault(name, []).append(lake_id)
     rejected_store = store.setdefault(REJECTED, {})
+    reviewed = set(store.get(REVIEWED, []))
     failures = 0
     for n, (name, ids) in enumerate(sorted(by_name.items())):
         if limit and n >= limit:
@@ -317,21 +319,34 @@ def collect(named: dict, store: dict, limit: int | None = None,
         if found:
             print(f"  {name}: {len(found)} item(s)")
         for lake_id in ids:
-            kept = store.get(lake_id, [])
+            kept, pool = store.get(lake_id, []), found
+            recheck = bool(client and lakes and kept and lake_id not in reviewed)
+            if recheck:
+                # Items kept earlier by the keyword rules alone are judged once too.
+                pool, before, kept = found + kept, kept, []
             known = {norm_title(i["title"]) for i in kept} | set(rejected_store.get(lake_id, []))
             # oldest first, so a syndicated copy is the duplicate and the original is kept
-            fresh = sorted((i for i in merge([], found) if norm_title(i["title"]) not in known),
+            fresh = sorted((i for i in merge([], pool) if norm_title(i["title"]) not in known),
                            key=lambda i: i.get("date") or "")
             if client and lakes and fresh:
                 # Two lakes can share a name, so each is judged against its own location.
+                asked = len(fresh)
                 fresh, rejected = ai_review(client, lakes[lake_id], kept, fresh)
                 time.sleep(AI_PAUSE_S)
+                if asked and not fresh and not rejected:   # the review failed
+                    if recheck:
+                        kept = before
+                else:
+                    reviewed.add(lake_id)
                 if rejected:
                     rejected_store[lake_id] = sorted(
                         set(rejected_store.get(lake_id, [])) | {norm_title(i["title"]) for i in rejected})
             merged = merge(kept, fresh)
             if merged:
                 store[lake_id] = merged
+            elif recheck:
+                store.pop(lake_id, None)
+            store[REVIEWED] = sorted(reviewed)
     return store
 
 
@@ -388,8 +403,8 @@ def main():
     print("AI review: " + (f"on ({client[0]}, {ai_model(client[0])})" if client
                            else "off (no GEMINI_API_KEY or ANTHROPIC_API_KEY) — keyword rules only"))
     store = add_curated(collect(named, store, args.limit, lakes, client))
-    n_links = sum(len(v) for k, v in store.items() if k != REJECTED)
-    print(f"{n_links} links for {len(store) - (REJECTED in store)} lakes")
+    real = {k: v for k, v in store.items() if not k.startswith("_")}
+    print(f"{sum(len(v) for v in real.values())} links for {len(real)} lakes")
 
     body = json.dumps(store, ensure_ascii=False, indent=1)
     if args.out:
