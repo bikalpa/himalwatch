@@ -392,18 +392,24 @@ function FilterRows({ lakes, filters, setFilters }) {
   const bySev     = applyFilters(lakes, { country: filters.country });
   const byCountry = applyFilters(lakes, { sev: filters.sev });
   return (
-    <React.Fragment>
+    <div>
+      <div style={{ display:"flex", gap:22, alignItems:"flex-start" }}>
+      <div>
       <div className="legend-title">Alert Status</div>
       {SEV_OPTIONS.map(([v,col]) => row("sev", v, v === "NONE" ? "None" : v, col,
         bySev.filter(l => v === "NONE" ? !l.sev : l.sev === v).length))}
-      {hasCountry && <div className="legend-title" style={{ marginTop:10 }}>Country</div>}
-      {hasCountry && COUNTRIES.map(c => row("country", c, c, null,
-        byCountry.filter(l => l.country === c).length))}
+      </div>
+      {hasCountry && <div>
+        <div className="legend-title">Country</div>
+        {COUNTRIES.map(c => row("country", c, c, null,
+          byCountry.filter(l => l.country === c).length))}
+      </div>}
+      </div>
       {(filters.sev || filters.country) &&
         <div className="legend-row" role="button" tabIndex={0}
              onClick={() => setFilters({ sev:null, country:null })}
              style={{ cursor:"pointer", marginTop:6, color:"var(--accent)" }}>Clear filters</div>}
-    </React.Fragment>
+    </div>
   );
 }
 
