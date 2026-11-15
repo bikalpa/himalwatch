@@ -122,3 +122,20 @@ ALERT_EMAIL_TO=           # optional — comma-separated recipients (keep in sec
 - The JavaScript script (`lake_detection.js`) runs in the GEE Code Editor at `code.earthengine.google.com` — it cannot be run from the terminal.
 - The Python port (`lake_detection.py`) uses `earthengine-api` + `geemap` and requires prior `earthengine authenticate` or a service account key.
 - Post-monsoon (Sep–Oct) imagery is used: monsoon (Jun–Sep) composites were too cloudy to give repeatable lake areas.
+
+## Alerts, reasons, ICIMOD list, news (added Nov 2026)
+
+- Two alert kinds, both defined in `dbt/models/marts/mart_lake_inventory.sql`:
+  steady growth (HIGH/MEDIUM/LOW, Nepal + 5 km only) and `SUDDEN` (a one-step
+  jump that holds for two seasons, any country — new reservoirs, dammed rivers).
+  `alert_reason` says in words why each lake is or is not flagged.
+- `pipeline/utils/icimod_pdgl.json` is ICIMOD/UNDP's 2020 list of potentially
+  dangerous glacial lakes (rank + reason), matched to our lakes in
+  `link_lakes.py`. It is © ICIMOD/UNDP under CC BY-NC-ND 4.0 — not this repo's
+  licence. Show it unaltered, with attribution and the DOI link; do not use it
+  commercially or paraphrase the descriptions.
+- `pipeline/news/lake_news.py` collects coverage for named lakes from Google
+  News RSS into R2 `news/lakes.json`. With the optional `ANTHROPIC_API_KEY`
+  secret Claude judges relevance and duplicates (model from repo variable
+  `NEWS_MODEL`, default `claude-opus-5-5`); without it keyword rules decide.
+  Hand-picked links for unnamed lakes go in `pipeline/utils/lake_links.json`.

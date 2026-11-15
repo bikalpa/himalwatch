@@ -47,7 +47,7 @@ models:
       - name: detection_count
         description: Total number of times this lake has been detected.
       - name: alert_severity
-        description: "Alert tier if area change qualifies: HIGH / MEDIUM / LOW / null."
+        description: "HIGH / MEDIUM / LOW for steady growth, SUDDEN for a one-step jump, else null."
 
   - name: mart_change_alerts
     description: >
@@ -61,12 +61,12 @@ models:
           - unique
           - not_null
       - name: alert_severity
-        description: "HIGH (>50%), MEDIUM (30–50%), or LOW (15–30%) area change."
+        description: "HIGH / MEDIUM / LOW for steady growth, SUDDEN for a one-step jump."
         tests:
           - not_null
           - accepted_values:
               arguments:
-                values: [HIGH, MEDIUM, LOW]
+                values: [HIGH, MEDIUM, LOW, SUDDEN]
       - name: area_change_pct
         description: Relative area change percentage (positive = growth, negative = shrinkage).
       - name: days_since_observation

@@ -155,6 +155,12 @@ function transformR2Lakes(geojson) {
       sev:      p.alert_severity || null,
       tile:     p.tile || "",
       country:  p.country || null,
+      named:    p.name || null,
+      // ICIMOD/UNDP 2020 potentially dangerous glacial lake: rank I/II/III + their reason
+      icimod:   p.icimod_rank ? { id: p.icimod_id, rank: p.icimod_rank, note: p.icimod_note } : null,
+      icimodRank: p.icimod_rank || null,
+      reason:   p.alert_reason || null,
+      news:     Array.isArray(p.news) ? p.news : [],
       series:   hist.length ? hist.map(h => h[1]) : [Math.max(0, base), area],
       years:    hist.length ? hist.map(h => h[0]) : null,
       growth:   p.growth_pct ?? null,
@@ -205,7 +211,7 @@ const IcoX        = () => <svg width="12" height="12" viewBox="0 0 12 12" fill="
 // ─── Badge ────────────────────────────────────────────────────────────────────
 function Badge({ sev }) {
   if (!sev) return null;
-  return <span className={`badge badge-${sev}`}>{sev}</span>;
+  return <span className={`badge badge-${sev}`}>{sev === "SUDDEN" ? "SUDDEN CHANGE" : sev}</span>;
 }
 
 // ─── SparkLine ────────────────────────────────────────────────────────────────
@@ -290,7 +296,27 @@ function DetailPanel({ lake, onClose }) {
         <button className="detail-close" onClick={onClose} aria-label="Close details"><IcoX/></button>
       </div>
       <div className="detail-body">
-        {l.sev && <div style={{marginBottom:12}}><Badge sev={l.sev}/></div>}
+        {l.sev && <div style={{marginBottom:8}}><Badge sev={l.sev}/></div>}
+        {l.icimod && (
+          <div style={{marginBottom:12, padding:"10px 12px", borderRadius:6,
+               border:"1px solid rgba(34,211,238,0.35)", background:"rgba(34,211,238,0.07)"}}>
+            <div style={{fontSize:11, fontWeight:700, letterSpacing:0.5, color:"#22d3ee", marginBottom:4}}>
+              ICIMOD POTENTIALLY DANGEROUS LAKE · RANK {l.icimod.rank}
+            </div>
+            <div className="detail-sub" style={{lineHeight:1.5, color:"var(--text)"}}>“{l.icimod.note}”</div>
+            <div className="detail-sub" style={{marginTop:6, lineHeight:1.5, fontSize:10}}>
+              ICIMOD ID <span className="mono">{l.icimod.id}</span> · assessed 2020, Rank I is the most critical.
+              Source: Bajracharya et al. (2020), ICIMOD &amp; UNDP,{" "}
+              <a href="https://doi.org/10.53055/ICIMOD.773" target="_blank" rel="noopener" style={linkStyle}>report</a> ·{" "}
+              <a href={`https://www.google.com/search?q=${encodeURIComponent(`"${l.icimod.id}"`)}`} target="_blank" rel="noopener" style={linkStyle}>search this ID</a>.
+              © ICIMOD/UNDP, CC BY-NC-ND 4.0, quoted unaltered.
+            </div>
+          </div>
+        )}
+        {l.reason && (
+          <div className="detail-sub" style={{marginBottom:12, lineHeight:1.5,
+               color: l.sev ? "var(--text)" : undefined}}>{l.reason}</div>
+        )}
         <div className="detail-grid">
           <div className="d-stat">
             <div className="d-stat-label">Current area</div>
@@ -349,10 +375,35 @@ function DetailPanel({ lake, onClose }) {
           </>
         )}
 
+        <div className="section-label">News &amp; coverage{l.news.length ? ` · ${l.news.length}` : ""}</div>
+        {l.news.length ? (
+          <div style={{marginBottom:12}}>
+            {l.news.map((n, i) => (
+              <div key={i} style={{marginBottom:8, lineHeight:1.4}}>
+                <a href={n.url} target="_blank" rel="noopener" style={{...linkStyle, fontSize:12}}>{n.title}</a>
+                <div className="detail-sub" style={{fontSize:10}}>
+                  {[n.date, n.source].filter(Boolean).join(" · ")}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="detail-sub" style={{marginBottom:12}}>
+            No coverage found yet{l.named ? "" : " (this lake has no name to search for)"}.
+          </div>
+        )}
+        <div className="detail-sub" style={{marginBottom:12}}>
+          Search:{" "}
+          {l.named && <><a href={`https://scholar.google.com/scholar?q=${encodeURIComponent(`"${l.named}" glacial lake`)}`} target="_blank" rel="noopener" style={linkStyle}>Google Scholar</a> ·{" "}
+          <a href={`https://news.google.com/search?q=${encodeURIComponent(`"${l.named}"`)}`} target="_blank" rel="noopener" style={linkStyle}>Google News</a> ·{" "}</>}
+          <a href={`https://www.google.com/search?q=${encodeURIComponent(`${l.lat.toFixed(3)} ${l.lon.toFixed(3)} glacial lake`)}`} target="_blank" rel="noopener" style={linkStyle}>by coordinates</a>
+        </div>
+
         <div className="detail-note">
           Area from Sentinel-2 NDWI (Sep–Oct composite, 20 m). Volume via V&nbsp;=&nbsp;0.104·A<sup>1.42</sup>
           (Huggel et al., 2002). Growth alert: seen in ≥ 5 seasons, area rising consistently,
-          recent seasons ≥ 10% larger than the earliest.
+          recent seasons ≥ 10% larger than the earliest. Sudden change: a one-step jump to
+          at least 3× the earlier size that has held for two seasons, in any country.
           {!hasMultiYear && " Only one season observed so far."}
         </div>
       </div>
@@ -361,13 +412,15 @@ function DetailPanel({ lake, onClose }) {
 }
 
 // ─── Shared filters (alert status + country) ────────────────────────────────
-const SEV_OPTIONS = [["HIGH","#ef4444"],["MEDIUM","#f97316"],["LOW","#eab308"],["NONE","#64748b"]];
+const SEV_OPTIONS = [["HIGH","#ef4444"],["MEDIUM","#f97316"],["LOW","#eab308"],["SUDDEN","#a855f7"],["NONE","#64748b"]];
+const SEV_LABEL   = { HIGH:"HIGH", MEDIUM:"MEDIUM", LOW:"LOW", SUDDEN:"Sudden change", NONE:"None" };
 const COUNTRIES   = ["Nepal","India","China"];
 
 function applyFilters(lakes, f) {
   return lakes.filter(l =>
     (!f.sev     || (f.sev === "NONE" ? !l.sev : l.sev === f.sev)) &&
-    (!f.country || l.country === f.country));
+    (!f.country || l.country === f.country) &&
+    (!f.icimod  || (f.icimod === "ANY" ? !!l.icimod : l.icimodRank === f.icimod)));
 }
 
 // Click a row to show only that group; click it again to show everything.
@@ -389,14 +442,16 @@ function FilterRows({ lakes, filters, setFilters }) {
     );
   };
   // Counts for one group respect the other group's filter
-  const bySev     = applyFilters(lakes, { country: filters.country });
-  const byCountry = applyFilters(lakes, { sev: filters.sev });
+  const bySev     = applyFilters(lakes, { country: filters.country, icimod: filters.icimod });
+  const byCountry = applyFilters(lakes, { sev: filters.sev, icimod: filters.icimod });
+  const byIcimod  = applyFilters(lakes, { sev: filters.sev, country: filters.country });
+  const hasIcimod = lakes.some(l => l.icimod);
   return (
     <div>
       <div style={{ display:"flex", gap:22, alignItems:"flex-start" }}>
       <div>
       <div className="legend-title">Alert Status</div>
-      {SEV_OPTIONS.map(([v,col]) => row("sev", v, v === "NONE" ? "None" : v, col,
+      {SEV_OPTIONS.map(([v,col]) => row("sev", v, SEV_LABEL[v], col,
         bySev.filter(l => v === "NONE" ? !l.sev : l.sev === v).length))}
       </div>
       {hasCountry && <div>
@@ -404,10 +459,16 @@ function FilterRows({ lakes, filters, setFilters }) {
         {COUNTRIES.map(c => row("country", c, c, null,
           byCountry.filter(l => l.country === c).length))}
       </div>}
+      {hasIcimod && <div>
+        <div className="legend-title" title="ICIMOD/UNDP 2020 list of potentially dangerous glacial lakes">ICIMOD dangerous list</div>
+        {row("icimod", "ANY", "All listed", "#22d3ee", byIcimod.filter(l => l.icimod).length)}
+        {["I","II","III"].map(r => row("icimod", r, `Rank ${r}`, null,
+          byIcimod.filter(l => l.icimodRank === r).length))}
+      </div>}
       </div>
-      {(filters.sev || filters.country) &&
+      {(filters.sev || filters.country || filters.icimod) &&
         <div className="legend-row" role="button" tabIndex={0}
-             onClick={() => setFilters({ sev:null, country:null })}
+             onClick={() => setFilters({ sev:null, country:null, icimod:null })}
              style={{ cursor:"pointer", marginTop:6, color:"var(--accent)" }}>Clear filters</div>}
     </div>
   );
@@ -448,7 +509,7 @@ function MapView({ active, lakes, allLakes, filters, setFilters, onSelectLake, s
           id: "lakes-halo", type: "circle", source: "lakes",
           paint: {
             "circle-radius": ["step",["coalesce",["get","area"],10],10,30,14,80,18,150,22],
-            "circle-color":  ["case",["==",["get","sev"],"HIGH"],"#ef4444",["==",["get","sev"],"MEDIUM"],"#f97316",["==",["get","sev"],"LOW"],"#eab308","#64748b"],
+            "circle-color":  ["case",["==",["get","sev"],"HIGH"],"#ef4444",["==",["get","sev"],"MEDIUM"],"#f97316",["==",["get","sev"],"LOW"],"#eab308",["==",["get","sev"],"SUDDEN"],"#a855f7","#64748b"],
             "circle-opacity": 0.22, "circle-blur": 1.2
           }
         },
@@ -456,8 +517,11 @@ function MapView({ active, lakes, allLakes, filters, setFilters, onSelectLake, s
           id: "lakes-circles", type: "circle", source: "lakes",
           paint: {
             "circle-radius": ["step",["coalesce",["get","area"],10],5,30,8,80,11,150,15],
-            "circle-color":  ["case",["==",["get","sev"],"HIGH"],"#ef4444",["==",["get","sev"],"MEDIUM"],"#f97316",["==",["get","sev"],"LOW"],"#eab308","#64748b"],
-            "circle-opacity": 0.97, "circle-stroke-width": 2, "circle-stroke-color": "#ffffff"
+            "circle-color":  ["case",["==",["get","sev"],"HIGH"],"#ef4444",["==",["get","sev"],"MEDIUM"],"#f97316",["==",["get","sev"],"LOW"],"#eab308",["==",["get","sev"],"SUDDEN"],"#a855f7","#64748b"],
+            "circle-opacity": 0.97,
+            // cyan ring = on ICIMOD's 2020 potentially-dangerous list
+            "circle-stroke-width": ["case",["to-boolean",["get","icimodRank"]],3,2],
+            "circle-stroke-color": ["case",["to-boolean",["get","icimodRank"]],"#22d3ee","#ffffff"]
           }
         }
       ]
@@ -579,7 +643,7 @@ function OverviewView({ lakes, alerts, onSelectLake }) {
   const expanding  = lakes.filter(l=>l.chg>15);
   const shrinking  = lakes.filter(l=>l.chg<-15);
   const topExp     = lakes.filter(l=>l.chg!=null).sort((a,b)=>b.chg-a.chg).slice(0,5);
-  const topAlerts  = [...alerts].sort((a,b)=>{const o={HIGH:0,MEDIUM:1,LOW:2};return o[a.sev]-o[b.sev];}).slice(0,5);
+  const topAlerts  = [...alerts].sort((a,b)=>{const o={HIGH:0,MEDIUM:1,LOW:2,SUDDEN:3};return o[a.sev]-o[b.sev];}).slice(0,5);
 
   return (
     <div className="overview">
@@ -693,12 +757,21 @@ function LakesView({ lakes, allLakes, filters, setFilters, onSelectLake }) {
           <option value="HIGH">High</option>
           <option value="MEDIUM">Medium</option>
           <option value="LOW">Low</option>
+          <option value="SUDDEN">Sudden change</option>
           <option value="NONE">No alert</option>
         </select>
         <select className="search-input" style={{ width:"auto" }} aria-label="Country"
           value={filters.country || ""} onChange={e=>setFilters(f=>({ ...f, country: e.target.value || null }))}>
           <option value="">All countries</option>
           {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className="search-input" style={{ width:"auto" }} aria-label="ICIMOD dangerous-lake list"
+          value={filters.icimod || ""} onChange={e=>setFilters(f=>({ ...f, icimod: e.target.value || null }))}>
+          <option value="">ICIMOD list: any</option>
+          <option value="ANY">On ICIMOD dangerous list</option>
+          <option value="I">ICIMOD Rank I</option>
+          <option value="II">ICIMOD Rank II</option>
+          <option value="III">ICIMOD Rank III</option>
         </select>
         <span className="table-count">{filtered.length} of {allLakes.length} lakes</span>
       </div>
@@ -715,6 +788,7 @@ function LakesView({ lakes, allLakes, filters, setFilters, onSelectLake }) {
             <Th col="n"    right>Obs.</Th>
             <Th col="lastDate">Last seen</Th>
             <Th col="sev">Alert</Th>
+            <Th col="icimodRank">ICIMOD</Th>
           </tr></thead>
           <tbody>
             {filtered.map(l => (
@@ -731,6 +805,7 @@ function LakesView({ lakes, allLakes, filters, setFilters, onSelectLake }) {
                 <td className="num">{l.n}</td>
                 <td className="mono" style={{fontSize:11}}>{l.lastDate||"—"}</td>
                 <td><Badge sev={l.sev}/></td>
+                <td className="mono">{l.icimodRank ? `Rank ${l.icimodRank}` : ""}</td>
               </tr>
             ))}
           </tbody>
@@ -742,7 +817,7 @@ function LakesView({ lakes, allLakes, filters, setFilters, onSelectLake }) {
 
 // ─── Alerts ───────────────────────────────────────────────────────────────────
 function AlertsView({ alerts, onSelectLake }) {
-  const sorted = [...alerts].sort((a,b)=>{const o={HIGH:0,MEDIUM:1,LOW:2};return o[a.sev]-o[b.sev];});
+  const sorted = [...alerts].sort((a,b)=>{const o={HIGH:0,MEDIUM:1,LOW:2,SUDDEN:3};return o[a.sev]-o[b.sev];});
   return (
     <div className="alerts-view">
       <div className="alerts-header">
@@ -843,7 +918,7 @@ function Sidebar({ view, onView, alerts }) {
       <div className="sidebar-spacer"/>
       <div className="sidebar-foot">
         Sentinel-2 · Weekly update<br/>
-        Lake names © OpenStreetMap contributors<br/>
+        Dangerous-lake ranks © ICIMOD/UNDP 2020 · Lake names © OpenStreetMap contributors<br/>
         <a href="https://github.com/bikalpa/himalwatch" target="_blank">github/himalwatch</a>
       </div>
     </nav>
@@ -887,7 +962,7 @@ function App() {
 
   const alerts = useMemo(() => lakes.filter(l => l.sev), [lakes]);
   // Alert-status and country filters, shared by the map and the lake list
-  const [filters, setFilters] = useState({ sev: null, country: null });
+  const [filters, setFilters] = useState({ sev: null, country: null, icimod: null });
   const shown = useMemo(() => applyFilters(lakes, filters), [lakes, filters]);
 
   useEffect(() => {

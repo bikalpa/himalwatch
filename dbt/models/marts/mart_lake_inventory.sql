@@ -15,6 +15,19 @@
 --        k = min(3, seasons / 2)
 --   5. Absolute gain (recent - early) >= 1 ha
 -- Severity by growth (recent vs early): LOW 10-25%, MEDIUM 25-50%, HIGH > 50%.
+--
+-- Sudden-change rule (severity 'SUDDEN', any country). Catches what the
+-- growth rule cannot: a lake that changes in one step — a new reservoir, a
+-- landslide dam, a rapid expansion — e.g. the Mabja Zangbo dam on the upper
+-- Karnali, 9 ha in 2023 and 88 ha in 2024. All must hold:
+--   1. There is a season with >= 2 seasons before it and >= 2 from it onward
+--   2. Every season from it onward is >= 3x the largest season before it
+--   3. ... and at least 5 ha larger
+--   4. Observed in one of the two newest seasons processed for its tile
+-- Needing two seasons after the jump costs a year, but drops the one-season
+-- spikes that cloud, snow and lake ice produce.
+--
+-- alert_reason says in words why a lake is or is not flagged.
 
 {{
   config(materialized='table')
@@ -49,6 +62,32 @@ stats as (
     group by lake_id
 ),
 
+jump_candidates as (
+    select
+        lake_id,
+        detection_year,
+        max(area_sqm) over (partition by lake_id order by detection_year
+                            rows between unbounded preceding and 1 preceding) as before_max_sqm,
+        min(area_sqm) over (partition by lake_id order by detection_year
+                            rows between current row and unbounded following) as after_min_sqm,
+        rn_asc - 1     as n_before,
+        n - rn_asc + 1 as n_after
+    from ranked
+),
+
+jumps as (
+    -- earliest qualifying jump per lake
+    select lake_id,
+           detection_year as sudden_year,
+           before_max_sqm as sudden_before_sqm,
+           after_min_sqm  as sudden_after_sqm
+    from jump_candidates
+    where n_before >= 2 and n_after >= 2
+      and after_min_sqm >= 3 * before_max_sqm
+      and after_min_sqm - before_max_sqm >= 50000
+    qualify row_number() over (partition by lake_id order by detection_year) = 1
+),
+
 latest as (
     select * from ranked where rn_desc = 1
 ),
@@ -76,6 +115,9 @@ joined as (
         l.country,
         l.name,
         l.name_hint,
+        l.icimod_id,
+        l.icimod_rank,
+        l.icimod_note,
 
         l.area_sqm   as latest_area_sqm,
         l.area_ha    as latest_area_ha,
@@ -100,6 +142,13 @@ joined as (
         s.latest_detection_date,
         s.latest_detection_year,
         s.detection_count,
+        t.tile_latest_year,
+
+        j.sudden_year,
+        j.sudden_before_sqm,
+        j.sudden_after_sqm,
+        coalesce(j.sudden_year is not null
+                 and s.latest_detection_year >= t.tile_latest_year - 1, false) as is_sudden,
 
         coalesce(
             l.in_nepal
@@ -114,15 +163,42 @@ joined as (
     join earliest e    using (lake_id)
     join stats    s    using (lake_id)
     join tile_latest t on t.tile = l.tile
+    left join jumps j  using (lake_id)
 )
 
 select
-    * exclude (is_growing),
+    * exclude (is_growing, is_sudden, tile_latest_year),
     case
         when is_growing and growth_pct > 50 then 'HIGH'
         when is_growing and growth_pct > 25 then 'MEDIUM'
         when is_growing                     then 'LOW'
+        when is_sudden                      then 'SUDDEN'
         else null
     end               as alert_severity,
+    case
+        when is_growing then
+            'Flagged: grew ' || cast(round(growth_pct) as integer) || '% steadily over '
+            || detection_count || ' seasons.'
+        when is_sudden then
+            'Flagged as a sudden change: jumped from '
+            || round(sudden_before_sqm / 1e4, 1) || ' ha to at least '
+            || round(sudden_after_sqm / 1e4, 1) || ' ha in ' || sudden_year
+            || ' and has stayed that size.'
+        when latest_detection_year < tile_latest_year - 1 then
+            'Not flagged: not detected in the last two seasons (last seen '
+            || latest_detection_year || ').'
+        when detection_count < 5 then
+            'Not flagged: seen in only ' || detection_count
+            || case when detection_count = 1 then ' season' else ' seasons' end
+            || '; a growth alert needs 5.'
+        when recent_area_sqm < 1.10 * baseline_area_sqm
+             or recent_area_sqm - baseline_area_sqm < 10000 then
+            'Not flagged: no meaningful growth (needs at least 10% and 1 ha).'
+        when trend_rho is null or trend_rho < 0.9 then
+            'Not flagged: its area goes up and down between years instead of rising steadily.'
+        when not in_nepal then
+            'Not flagged: growing steadily, but more than 5 km outside Nepal.'
+        else 'Not flagged: its area does not rise steadily enough from year to year.'
+    end               as alert_reason,
     current_timestamp as mart_updated_at
 from joined

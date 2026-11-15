@@ -207,7 +207,21 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install boto3 python-dotenv requests pandas pyarrow
+      - run: pip install boto3 python-dotenv requests pandas pyarrow anthropic
+      - name: Collect news and coverage for named lakes
+        # Best effort: a blocked or slow news search must never stop the alerts.
+        continue-on-error: true
+        timeout-minutes: 20
+        run: python pipeline/news/lake_news.py
+        env:
+          # Optional: lets Claude judge relevance and duplicates. Without it,
+          # keyword rules alone decide.
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          NEWS_MODEL:           ${{ vars.NEWS_MODEL }}
+          R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME:       ${{ secrets.R2_BUCKET_NAME }}
       - name: Refresh dashboard cache
         run: python dbt/export_worker_json.py
         env:

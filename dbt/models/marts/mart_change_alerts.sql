@@ -7,6 +7,9 @@
 -- >= 5 seasons, consistent upward trend (Spearman rho >= 0.9), recent
 -- seasons >= 10% and >= 1 ha above the earliest seasons.
 --
+-- Lakes that changed in one step (new reservoir, landslide dam) are here too,
+-- with severity 'SUDDEN' — see the sudden-change rule in mart_lake_inventory.
+--
 -- Severity by growth (recent vs early): LOW 10–25%, MEDIUM 25–50%, HIGH > 50%.
 
 {{
@@ -18,6 +21,8 @@ select
     country,
     name,
     name_hint,
+    icimod_id,
+    icimod_rank,
     tile,
     centroid_lat,
     centroid_lon,
@@ -44,8 +49,14 @@ select
     latest_detection_year,
     detection_count,
 
+    -- Sudden change (severity 'SUDDEN'): size before and after the jump
+    sudden_year,
+    sudden_before_sqm,
+    sudden_after_sqm,
+
     -- Severity
     alert_severity,
+    alert_reason,
 
     -- Days since last confirmed observation
     datediff('day', latest_detection_date, current_date) as days_since_observation,
@@ -64,5 +75,6 @@ order by
         when 'HIGH'   then 1
         when 'MEDIUM' then 2
         when 'LOW'    then 3
+        when 'SUDDEN' then 4
     end,
     growth_pct desc

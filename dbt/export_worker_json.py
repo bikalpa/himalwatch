@@ -11,6 +11,8 @@ Run after: dbt run && python export_marts.py
 Usage:
     python export_worker_json.py
 """
+from __future__ import annotations
+
 import io
 import json
 import os
@@ -64,7 +66,17 @@ def _gif_lake_ids() -> set:
     return ids
 
 
-def build_lakes_geojson(inv: pd.DataFrame, linked: pd.DataFrame, gif_ids: set) -> dict:
+def _news() -> dict:
+    """{lake_id: [{title, url, source, date}]} from pipeline/news/lake_news.py, if it has run."""
+    try:
+        news = json.loads(s3.get_object(Bucket=bucket, Key="news/lakes.json")["Body"].read())
+        return {k: v for k, v in news.items() if not k.startswith("_")}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def build_lakes_geojson(inv: pd.DataFrame, linked: pd.DataFrame, gif_ids: set,
+                        news: dict | None = None) -> dict:
     """Convert inventory DataFrame to GeoJSON FeatureCollection."""
     # Real per-season history: {lake_id: [[year, area_ha], ...]}
     series = {
@@ -79,6 +91,8 @@ def build_lakes_geojson(inv: pd.DataFrame, linked: pd.DataFrame, gif_ids: set) -
                  if k != "geometry_wkt"}
         props["series"]  = series.get(row["lake_id"], [])
         props["has_gif"] = row["lake_id"] in gif_ids
+        if news and news.get(row["lake_id"]):
+            props["news"] = news[row["lake_id"]]
         features.append({
             "type": "Feature",
             "geometry": {
@@ -129,7 +143,7 @@ if __name__ == "__main__":
     print(f"  {len(inv)} lakes, {len(alerts)} alerts, {len(gif_ids)} GIFs")
 
     print("Building JSON cache files ...")
-    _upload_json("cache/lakes.json",  build_lakes_geojson(inv, linked, gif_ids))
+    _upload_json("cache/lakes.json",  build_lakes_geojson(inv, linked, gif_ids, _news()))
     _upload_json("cache/alerts.json", build_alerts_json(alerts))
     _upload_json("cache/stats.json",  build_stats_json(inv, alerts))
 

@@ -40,6 +40,11 @@ select
     cast(name      as varchar) as name,
     cast(name_hint as varchar) as name_hint,
 
+    -- ICIMOD/UNDP 2020 potentially dangerous glacial lake: id, rank (I/II/III), reason
+    cast(icimod_id   as varchar) as icimod_id,
+    cast(icimod_rank as varchar) as icimod_rank,
+    cast(icimod_note as varchar) as icimod_note,
+
     current_timestamp as loaded_at
 
 from read_parquet(

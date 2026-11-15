@@ -1,0 +1,472 @@
+{
+ "_source": {
+  "title": "Inventory of glacial lakes and identification of potentially dangerous glacial lakes in the Koshi, Gandaki, and Karnali River Basins of Nepal, the Tibet Autonomous Region of China, and India",
+  "citation": "Bajracharya, S.R., Maharjan, S.B., Shrestha, F., Sherpa, T.C., Wagle, N., Shrestha, A.B. (2020). Research Report. ICIMOD and UNDP.",
+  "doi": "https://doi.org/10.53055/ICIMOD.773",
+  "copyright": "© 2020 International Centre for Integrated Mountain Development (ICIMOD) and United Nations Development Programme (UNDP) Nepal",
+  "license": "CC BY-NC-ND 4.0 (https://creativecommons.org/licenses/by-nc-nd/4.0/). The report may be reproduced in whole or in part for educational or nonprofit purposes with acknowledgement of the source; no commercial use without written permission from the copyright holders.",
+  "note": "This file is NOT covered by this repository's own licence. Rank and description are ICIMOD's, reproduced unaltered (whitespace only) from the report's list of potentially dangerous glacial lakes, as transcribed in the data file of the Centre for Investigative Journalism Nepal map (https://datawrapper.dwcdn.net/Y5jh7/1/). That file has 46 of the report's 47 lakes; the one in India is missing. The assessment dates from 2020 and has not been updated."
+ },
+ "lakes": [
+  {
+   "id": "GL087945E27781N",
+   "name": null,
+   "lon": 87.94583,
+   "lat": 27.78083,
+   "rank": "I",
+   "description": "Dam is not long (<400 m) and the crest width less than 20 m; steep side slope and chances of landslide; source glacier hanging",
+   "basin": "Tamor",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL087934E27790N",
+   "name": null,
+   "lon": 87.93444,
+   "lat": 27.79,
+   "rank": "III",
+   "description": "Lake close to the dam end but has confined outlet; hanging glacier; side wall at a steep slope",
+   "basin": "Tamor",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL087893E27694N",
+   "name": null,
+   "lon": 87.8925,
+   "lat": 27.69444,
+   "rank": "III",
+   "description": "Shallow lake at steep slope; short dam length; hanging mother glacier",
+   "basin": "Tamor",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL087749E27816N",
+   "name": null,
+   "lon": 87.74694,
+   "lat": 27.81667,
+   "rank": "I",
+   "description": "Glacier in contact; dam not long; possibilities of avalanches; landslide on outer slope of the dam",
+   "basin": "Tamor",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL087596E27705N",
+   "name": null,
+   "lon": 87.59611,
+   "lat": 27.705,
+   "rank": "I",
+   "description": "Lake expanding; cascading lake overflow may trigger an outburst; dam width not large; erosion at end moraine",
+   "basin": "Arun",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL087632E27729N",
+   "name": null,
+   "lon": 87.63222,
+   "lat": 27.72917,
+   "rank": "III",
+   "description": "Lake outlet close to end of moraine (2 m); dam at a high gradient",
+   "basin": "Arun",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL087771E27926N",
+   "name": null,
+   "lon": 87.77083,
+   "lat": 27.92667,
+   "rank": "I",
+   "description": "Possibilities of lake expansion; calving source glacier; lake outlet near the dam end; steep side wall",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL087636E28093N",
+   "name": null,
+   "lon": 87.63611,
+   "lat": 28.0925,
+   "rank": "I",
+   "description": "Possibilities of lake expansion; lake outlet near the dam end; marking of outlet drainage; seepage at the bottom of the dam; steep outward slope of dam; steep side wall",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL087626E28052N",
+   "name": null,
+   "lon": 87.62611,
+   "lat": 28.05222,
+   "rank": "I",
+   "description": "Possibility of lake expansion; lake outlet near the dam end; no clear outlet drainage; seepage at the bottom of the dam; steep and eroded side wall with landslide and blocks of rock; hanging source glacier",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL087563E28178N",
+   "name": null,
+   "lon": 87.5625,
+   "lat": 28.17833,
+   "rank": "III",
+   "description": "Large, expanding lake; no distinct lake outlet and surface run-off appears after 500 m down the slope; steep wall on one side",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL087591E28229N",
+   "name": null,
+   "lon": 87.59139,
+   "lat": 28.22917,
+   "rank": "II",
+   "description": "Large lake at the extreme end of the moraine; dry outlet channel for almost 370 m, after which the river flow begins; old and compact moraine; hanging source glacier",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL087930E27949N",
+   "name": null,
+   "lon": 87.93,
+   "lat": 27.94917,
+   "rank": "I",
+   "description": "Possibility of small lakes merging; dam width not large, calving source glacier; steep side slope with the possibility of snow avalanches and landslides",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL088002E27928N",
+   "name": null,
+   "lon": 88.00056,
+   "lat": 27.92833,
+   "rank": "I",
+   "description": "Large lake fed by many tributary glaciers; old and dry lake outlet channel of about 40 m, after which major seepage appears; calving source glacier; PDGL GL088019E27928N is in the tributary valley",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL088019E27928N",
+   "name": null,
+   "lon": 88.01917,
+   "lat": 27.92833,
+   "rank": "I",
+   "description": "Possibility of lake expansion; lake outlet at the end of the dam; couple of overflow channels; moraine seems old and compact; calving source glacier",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL088066E27933N",
+   "name": null,
+   "lon": 88.06611,
+   "lat": 27.9325,
+   "rank": "I",
+   "description": "Lake water lowered in the past; compaction done at end-moraine dam; calving glacier; possibility of lake expansion; short dam length",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL088075E27946N",
+   "name": null,
+   "lon": 88.075,
+   "lat": 27.94667,
+   "rank": "I",
+   "description": "Lake water lowered in the past; lake expanding at both ends; dead ice on the end moraine; large source glaciers; large PDGL (GL088066E27933N) at valley to the left may damage the lake",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL088288E28017N",
+   "name": null,
+   "lon": 88.28833,
+   "lat": 28.01722,
+   "rank": "II",
+   "description": "Lake close to dam end but confined; wide outlet channel; compact and old moraine; calving source glacier at a steep slope; high gradient of moraine",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL086304E28374N",
+   "name": null,
+   "lon": 86.30444,
+   "lat": 28.37444,
+   "rank": "II",
+   "description": "Possibility of ice fall from source glacier; large lake; old moraine",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL087134E28069N",
+   "name": null,
+   "lon": 87.13444,
+   "lat": 28.06917,
+   "rank": "I",
+   "description": "Possibility of lake expansion; lake outlet almost at dam end, minor overflow but much seepage; possibility of landslides on the side wall",
+   "basin": "Arun",
+   "country": "China"
+  },
+  {
+   "id": "GL087095E27829N",
+   "name": null,
+   "lon": 87.095,
+   "lat": 27.82917,
+   "rank": "II",
+   "description": "Hanging lake connected with the retreating glacier; landslide at the side wall",
+   "basin": "Arun",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL087092E27798N",
+   "name": "Lower Barun",
+   "lon": 87.09222,
+   "lat": 27.79833,
+   "rank": "I",
+   "description": "Possibility of lake expansion; calving source glacier; chances of landslides and ice avalanches at the wall to the right of the lake; one lake and two small lakes in the upper catchment",
+   "basin": "Arun",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086977E27711N",
+   "name": null,
+   "lon": 86.97694,
+   "lat": 27.71083,
+   "rank": "I",
+   "description": "Lake expanding towards the glacier; short dam length and steep, calving source glacier; high chances of ice toppling and avalanches",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086958E27755N",
+   "name": null,
+   "lon": 86.95833,
+   "lat": 27.755,
+   "rank": "II",
+   "description": "Hanging glaciers; high chance of ice avalanches; lake formation near the end moraine; ice underneath the dam; small ponds on the dam, but the dam is more than 500 m long, extending up to the main river valley",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086957E27783N",
+   "name": null,
+   "lon": 86.95722,
+   "lat": 27.7825,
+   "rank": "I",
+   "description": "Hanging glacier; chances of avalanches; short dam length; steep slope with many erosional features",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086935E27838N",
+   "name": null,
+   "lon": 86.935,
+   "lat": 27.83833,
+   "rank": "I",
+   "description": "Lake expanding towards the retreating glacier snout; hanging lakes on both sides of the valley; lake outlet close to the dam end; many cascading lakes in the lower old moraine. PDGL GL086928E27850N is in the hanging valley",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086928E27850N",
+   "name": null,
+   "lon": 86.92833,
+   "lat": 27.85,
+   "rank": "I",
+   "description": "Lake outlet near the dam end; dam’s outer slope is steep; cascading lake upstream; chances of landslide and ice avalanches upstream; may also affect lake number",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086917E27832N",
+   "name": null,
+   "lon": 86.91722,
+   "lat": 27.83222,
+   "rank": "I",
+   "description": "Close to source glacier; short dam length and steep side slope with erosional features; ice underneath the dam",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086858E27687N",
+   "name": null,
+   "lon": 86.85833,
+   "lat": 27.68722,
+   "rank": "I",
+   "description": "Few metres of freeboard; steep slope of outer dam; hanging source glacier; chances of landslides and ice avalanches from the headwater and from valley to the true right",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086925E27898N",
+   "name": null,
+   "lon": 86.925,
+   "lat": 27.89833,
+   "rank": "I",
+   "description": "Lake water lowered by 4 m in 2016; lake expansion reduced; ice underneath end moraine; merging of supraglacial pond",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086612E27779N",
+   "name": null,
+   "lon": 86.61222,
+   "lat": 27.77917,
+   "rank": "I",
+   "description": "Lake expanding rapidly, in contact with calving glacier; three hanging lakes in the side valley; continuous dam",
+   "basin": "DudhKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086476E27861N",
+   "name": null,
+   "lon": 86.47611,
+   "lat": 27.86083,
+   "rank": "I",
+   "description": "Lake water lowered in 2000; expanding rapidly with the retreat of calving source glacier; steep moraine; side moraine is thin and in danger; hanging lake in tributary glacier",
+   "basin": "TamaKoshi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL086447E27946N",
+   "name": null,
+   "lon": 86.44694,
+   "lat": 27.94667,
+   "rank": "I",
+   "description": "Lake expanding with possibility of merging with supraglacial ponds; evidence of small supralake outburst at end moraine; dead ice at the end moraine; fed by three glaciers; calving at source glacier",
+   "basin": "TamaKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086500E28033N",
+   "name": null,
+   "lon": 86.5,
+   "lat": 28.0325,
+   "rank": "II",
+   "description": "Lake expanding; calving source glacier; additional small lake at end moraine; steep slope at end moraine; large hanging glacial lake in the side valley",
+   "basin": "TamaKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086520E28073N",
+   "name": null,
+   "lon": 86.52,
+   "lat": 28.0725,
+   "rank": "I",
+   "description": "Lake extension is close to end moraine; hanging source glacier; erosional features at left valley wall",
+   "basin": "TamaKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086530E28135N",
+   "name": null,
+   "lon": 86.53,
+   "lat": 28.135,
+   "rank": "II",
+   "description": "Pond and ice in end moraine; confined outlet with gentle slope; hanging lake in the tributary valley; steep and calving source glacier",
+   "basin": "TamaKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086532E28185N",
+   "name": null,
+   "lon": 86.53222,
+   "lat": 28.185,
+   "rank": "I",
+   "description": "Lake snout at the end of the dam; possibility of expansion; calving source glacier and crevasses near the lake",
+   "basin": "TamaKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086371E28238N",
+   "name": null,
+   "lon": 86.37083,
+   "lat": 28.23833,
+   "rank": "I",
+   "description": "Lake expanding in contact with long cascading glacier; no freeboard; short inward dam length; supraglacial lake in the side valley",
+   "basin": "TamaKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086314E28194N",
+   "name": null,
+   "lon": 86.31444,
+   "lat": 28.19444,
+   "rank": "I",
+   "description": "Lake extension is close to end moraine; hanging source glacier with steep slope; hanging lake at the side valley",
+   "basin": "TamaKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086157E28303N",
+   "name": null,
+   "lon": 86.15722,
+   "lat": 28.3025,
+   "rank": "I",
+   "description": "Lake extension up to end moraine; crevasse on the hanging source glacier; possibility of ice avalanches",
+   "basin": "SunKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL086225E28346N",
+   "name": null,
+   "lon": 86.225,
+   "lat": 28.34667,
+   "rank": "II",
+   "description": "Lake expanding on calving source glacier; short dam length but clear outlet in the lake",
+   "basin": "SunKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL085870E28360N",
+   "name": null,
+   "lon": 85.87,
+   "lat": 28.36,
+   "rank": "II",
+   "description": "Large expanding lake; small outlet; gentle dam; possibility of ice in end moraine; possibility of landslides and ice avalanches from side slope",
+   "basin": "SunKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL085838E28322N",
+   "name": null,
+   "lon": 85.83833,
+   "lat": 28.32222,
+   "rank": "II",
+   "description": "Fast-growing lake; steep source glacier; short end moraine; narrow lake outlet",
+   "basin": "SunKoshi",
+   "country": "China"
+  },
+  {
+   "id": "GL085630E28162N",
+   "name": null,
+   "lon": 85.63,
+   "lat": 28.16222,
+   "rank": "I",
+   "description": "Lake at extreme end of dam; chances of landslides from the wall to the right, and of ice avalanches from the hanging source glacier",
+   "basin": "Trishuli",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL085494E28508N",
+   "name": null,
+   "lon": 85.49444,
+   "lat": 28.50833,
+   "rank": "II",
+   "description": "Lake expanding towards the debris-covered glacier; hanging moraine; steep outer dam slope; chances of snow and ice avalanches; length of moraine is about 100 m",
+   "basin": "Trishuli",
+   "country": "China"
+  },
+  {
+   "id": "GL084485E28488N",
+   "name": null,
+   "lon": 84.485,
+   "lat": 28.48833,
+   "rank": "I",
+   "description": "Large lake, expanding on the debris-covered source glacier; possibility of landslides and snow avalanches from the side walls; evidence of subsidence of old and compact end moraine",
+   "basin": "Marsyangdi",
+   "country": "Nepal"
+  },
+  {
+   "id": "GL082673E29802N",
+   "name": null,
+   "lon": 82.6725,
+   "lat": 29.80222,
+   "rank": "II",
+   "description": "Shallow lake but close to the crest; overhanging boulder protecting erosion of the dam; hanging source glacier with many crevasses",
+   "basin": "Mugu",
+   "country": "Nepal"
+  }
+ ]
+}

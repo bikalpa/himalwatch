@@ -72,6 +72,10 @@ NEPAL_MARGIN_DEG = 0.05
 # the tiles touch no other country. Where claims overlap (Kalapani /
 # Limpiyadhura) the Nepal boundary file wins — this is a display label only.
 INDIA_BOUNDARY = Path(__file__).parent / "utils" / "india_boundary.geojson"
+# ICIMOD/UNDP 2020 list of potentially dangerous glacial lakes (rank + reason).
+# See the _source block in the file for citation and licence (CC BY-NC-ND 4.0).
+ICIMOD_PDGL = Path(__file__).parent / "utils" / "icimod_pdgl.json"
+ICIMOD_MATCH_DEG = 0.003   # ~300 m: ICIMOD's point must be this close to our outline
 
 
 def nepal_area():
@@ -90,6 +94,29 @@ def country_lookup():
         p = Point(lon, lat)
         return "Nepal" if nepal.contains(p) else "India" if india.contains(p) else "China"
     return country
+
+
+def match_icimod(outlines: dict) -> dict:
+    """
+    outlines: {lake_id: newest outline}. Returns {lake_id: ICIMOD entry} — each
+    ICIMOD lake goes to the nearest of our lakes within ICIMOD_MATCH_DEG, and a
+    lake of ours takes at most one (the nearest) ICIMOD entry.
+    """
+    if not ICIMOD_PDGL.exists() or not outlines:
+        return {}
+    ids, geoms = list(outlines), list(outlines.values())
+    tree = STRtree(geoms)
+    best = {}
+    for entry in json.loads(ICIMOD_PDGL.read_text())["lakes"]:
+        p = Point(entry["lon"], entry["lat"])
+        near = [(geoms[i].distance(p), ids[i]) for i in tree.query(p.buffer(ICIMOD_MATCH_DEG))]
+        near = [n for n in near if n[0] <= ICIMOD_MATCH_DEG]
+        if not near:
+            continue
+        d, lake_id = min(near)
+        if lake_id not in best or d < best[lake_id][0]:
+            best[lake_id] = (d, entry)
+    return {lake_id: e for lake_id, (_, e) in best.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +148,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
     raw = raw[~raw["geom"].apply(lambda g: g.is_empty)].reset_index(drop=True)
 
     out = []
+    outlines = {}
     nepal = nepal_area()
     names = LakeNames()
     country_of = country_lookup()
@@ -161,6 +189,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
         # Name from the newest outline; unnamed lakes get a "near X" hint instead.
         last_year = comp["detection_year"].max()
         newest = unary_union(comp.loc[comp["detection_year"] == last_year, "geom"].tolist())
+        outlines[lake_id] = newest
         country = country_of(newest.centroid.x, newest.centroid.y)
         name = names.name_for(newest)
         name_hint = None if name else names.hint_for(newest.centroid.y, newest.centroid.x)
@@ -200,10 +229,18 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
                 "name_hint":      name_hint,
             })
 
+    icimod = match_icimod(outlines)
+    for row in out:
+        e = icimod.get(row["lake_id"])
+        row["icimod_id"]   = e["id"] if e else None
+        row["icimod_rank"] = e["rank"] if e else None
+        row["icimod_note"] = e["description"] if e else None
+
     cols = ["lake_id", "tile", "detection_year", "geometry_wkt", "centroid_lat",
             "centroid_lon", "area_sqm", "area_ha", "mean_elevation", "mean_ndwi",
             "mean_ndsi", "volume_m3", "volume_mcm", "season_start", "season_end",
-            "detected_at", "polygon_count", "in_nepal", "country", "name", "name_hint"]
+            "detected_at", "polygon_count", "in_nepal", "country", "name", "name_hint",
+            "icimod_id", "icimod_rank", "icimod_note"]
     return pd.DataFrame(out, columns=cols)
 
 
@@ -267,7 +304,9 @@ def main():
     multi = (linked.groupby("lake_id").size() >= 2).sum()
     n_nepal = linked.loc[linked["in_nepal"], "lake_id"].nunique()
     print(f"Linked {len(raw)} polygons -> {n_lakes} lakes "
-          f"({multi} seen in 2+ years, {n_nepal} in Nepal), {len(linked)} lake-year rows")
+          f"({multi} seen in 2+ years, {n_nepal} in Nepal, "
+          f"{linked.loc[linked['icimod_id'].notna(), 'lake_id'].nunique()} on ICIMOD's "
+          f"dangerous-lake list), {len(linked)} lake-year rows")
 
     if args.out:
         linked.to_parquet(args.out, index=False)
