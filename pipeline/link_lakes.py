@@ -52,8 +52,13 @@ MIN_OVERLAP_FRAC = 0.10
 # Only link detections made with the current method (Sep–Oct composite).
 # Older files in R2 used a Jun–Sep window and a broken water test.
 SEASON_START_MM = "09-01"
-# Pieces of one lake split by a strip/tile seam lie within this distance (~10 m).
-SEAM_TOLERANCE_DEG = 0.0001
+# Pieces of one lake detected in the same year are merged when the gap between
+# them is at most about one 20 m pixel (~25 m). Two causes: processing strip /
+# tile seams, and the per-pixel slope mask — the 2000-era SRTM terrain still
+# shows an ice cliff where a lake has since grown into its glacier, which cut
+# a one-pixel line through Thulagi and reported its growing end as a separate
+# 18 ha lake.
+SEAM_TOLERANCE_DEG = 0.00025
 # The processing tiles are rectangles that reach well into Tibet. Lakes are
 # still tracked there, but only lakes inside Nepal (plus this margin, ~5 km,
 # for lakes sitting on the border divide) can raise alerts.

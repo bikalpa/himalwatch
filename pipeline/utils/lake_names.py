@@ -19,6 +19,8 @@ from shapely.strtree import STRtree
 _FILE = Path(__file__).parent / "lake_names.json"
 MIN_BBOX_OVERLAP = 0.5      # share of the smaller bounding box that must overlap
 HINT_MAX_KM = 10.0          # "x km NE of <named lake>" only within this range
+# Names people in Nepal actually use, where OpenStreetMap's main tag differs.
+ALIASES = {"Dona Lake": "Thulagi Lake (Dona Tal)"}
 _COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
 
@@ -29,6 +31,8 @@ def _latin(s: str) -> bool:
 class LakeNames:
     def __init__(self, path: Path = _FILE):
         self.items = json.loads(path.read_text())
+        for i in self.items:
+            i["name"] = ALIASES.get(i["name"], i["name"])
         self.boxes = [box(*i["bbox"]) for i in self.items]
         self.tree = STRtree(self.boxes)
         self.latin = [(i["name"], b.centroid.y, b.centroid.x)

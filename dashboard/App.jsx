@@ -268,12 +268,24 @@ function DetailPanel({ lake, onClose }) {
   const lastObs  = l.lastDate || "—";
   const yLabels  = seriesYears(l.series, l.years);
   const hasMultiYear = l.years ? l.years.length > 1 : l.series?.length > 2;
+  // Exact location, satellite view
+  const gmaps = `https://www.google.com/maps/@${l.lat.toFixed(5)},${l.lon.toFixed(5)},2500m/data=!3m1!1e3`;
+  const osm   = `https://www.openstreetmap.org/?mlat=${l.lat.toFixed(5)}&mlon=${l.lon.toFixed(5)}#map=15/${l.lat.toFixed(5)}/${l.lon.toFixed(5)}`;
+  const linkStyle = {color:"var(--accent, #22d3ee)", textDecoration:"none"};
 
   return (
     <div className="detail-panel open" role="dialog" aria-modal="false" aria-label={`${l.name} details`}>
       <div className="detail-head">
-        <div className="detail-name">{l.name}</div>
+        <div className="detail-name">
+          <a href={gmaps} target="_blank" rel="noopener" title="Open this location in Google Maps"
+             style={{color:"inherit", textDecoration:"none"}}>{l.name} ↗</a>
+        </div>
         <div className="detail-sub">{l.id} · {TILE_LABELS[l.tile] || l.tile}</div>
+        <div className="detail-sub">
+          {l.lat.toFixed(4)}°N, {l.lon.toFixed(4)}°E ·{" "}
+          <a href={gmaps} target="_blank" rel="noopener" style={linkStyle}>Google Maps</a> ·{" "}
+          <a href={osm} target="_blank" rel="noopener" style={linkStyle}>OpenStreetMap</a>
+        </div>
         <button className="detail-close" onClick={onClose} aria-label="Close details"><IcoX/></button>
       </div>
       <div className="detail-body">
@@ -324,10 +336,15 @@ function DetailPanel({ lake, onClose }) {
         {l.gif && (
           <>
             <div className="section-label">Satellite time-lapse · Sentinel-2, Sep–Oct</div>
-            <a href={l.gif} target="_blank" rel="noopener">
+            <a href={gmaps} target="_blank" rel="noopener" title="Open this location in Google Maps">
               <img src={l.gif} alt={`${l.name} satellite time-lapse by year`} loading="lazy"
-                   style={{width:"100%",borderRadius:6,display:"block",marginBottom:12}}/>
+                   style={{width:"100%",borderRadius:6,display:"block",marginBottom:6}}/>
             </a>
+            <div className="detail-sub" style={{marginBottom:12}}>
+              Click the image for Google Maps ·{" "}
+              <a href={osm} target="_blank" rel="noopener" style={linkStyle}>OpenStreetMap</a> ·{" "}
+              <a href={l.gif} target="_blank" rel="noopener" style={linkStyle}>full-size GIF</a>
+            </div>
           </>
         )}
 
