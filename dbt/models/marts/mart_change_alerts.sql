@@ -15,6 +15,8 @@
 
 select
     lake_id,
+    name,
+    name_hint,
     tile,
     centroid_lat,
     centroid_lon,

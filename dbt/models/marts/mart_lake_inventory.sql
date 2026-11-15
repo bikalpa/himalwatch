@@ -73,6 +73,8 @@ joined as (
         l.mean_elevation,
         l.geometry_wkt,
         l.in_nepal,
+        l.name,
+        l.name_hint,
 
         l.area_sqm   as latest_area_sqm,
         l.area_ha    as latest_area_ha,

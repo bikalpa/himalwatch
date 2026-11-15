@@ -43,6 +43,7 @@ from shapely.strtree import STRtree
 
 sys.path.insert(0, str(Path(__file__).parent))
 from utils.volume_estimate import estimate_volume_m3  # noqa: E402
+from utils.lake_names import LakeNames  # noqa: E402
 
 LINKED_KEY = "linked/lake_detections.parquet"
 # Ignore sliver contacts: polygons must share at least this fraction of the
@@ -97,6 +98,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
 
     out = []
     nepal = nepal_area()
+    names = LakeNames()
     grp = raw.reset_index(drop=True)
     geoms = grp["geom"].tolist()
     years = grp["detection_year"].tolist()
@@ -131,6 +133,11 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
         # A lake straddling a tile edge belongs to the tile holding most of it
         tile = comp.groupby("tile")["area_sqm"].sum().idxmax()
         in_nepal = any(nepal.intersects(g) for g in comp["geom"])
+        # Name from the newest outline; unnamed lakes get a "near X" hint instead.
+        last_year = comp["detection_year"].max()
+        newest = unary_union(comp.loc[comp["detection_year"] == last_year, "geom"].tolist())
+        name = names.name_for(newest)
+        name_hint = None if name else names.hint_for(newest.centroid.y, newest.centroid.x)
 
         for year, yr in comp.groupby("detection_year"):
             geom = unary_union(yr["geom"].tolist())
@@ -162,12 +169,14 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
                 "detected_at":    str(yr["detected_at"].max()),
                 "polygon_count":  len(yr),
                 "in_nepal":       in_nepal,
+                "name":           name,
+                "name_hint":      name_hint,
             })
 
     cols = ["lake_id", "tile", "detection_year", "geometry_wkt", "centroid_lat",
             "centroid_lon", "area_sqm", "area_ha", "mean_elevation", "mean_ndwi",
             "mean_ndsi", "volume_m3", "volume_mcm", "season_start", "season_end",
-            "detected_at", "polygon_count", "in_nepal"]
+            "detected_at", "polygon_count", "in_nepal", "name", "name_hint"]
     return pd.DataFrame(out, columns=cols)
 
 

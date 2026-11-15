@@ -142,7 +142,8 @@ function transformR2Lakes(geojson) {
 
     return {
       id:       p.lake_id,
-      name:     named?.name || lakeName(p),
+      // Real name from OpenStreetMap; unnamed lakes say what they are near
+      name:     p.name || (p.name_hint ? `Unnamed · ${p.name_hint}` : lakeName(p)),
       lon, lat,
       elev:     p.mean_elevation ?? 0,
       area,
@@ -755,6 +756,7 @@ function Sidebar({ view, onView, alerts }) {
       <div className="sidebar-spacer"/>
       <div className="sidebar-foot">
         Sentinel-2 · Weekly update<br/>
+        Lake names © OpenStreetMap contributors<br/>
         <a href="https://github.com/bikalpa/himalwatch" target="_blank">github/himalwatch</a>
       </div>
     </nav>

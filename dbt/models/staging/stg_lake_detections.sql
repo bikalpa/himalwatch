@@ -34,6 +34,10 @@ select
     -- false for lakes on the Tibetan side of the border (tracked, never alerted)
     cast(in_nepal as boolean) as in_nepal,
 
+    -- OpenStreetMap name, or for unnamed lakes a hint like '3.2 km NE of Imja Tsho'
+    cast(name      as varchar) as name,
+    cast(name_hint as varchar) as name_hint,
+
     current_timestamp as loaded_at
 
 from read_parquet(

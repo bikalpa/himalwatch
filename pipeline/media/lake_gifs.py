@@ -37,7 +37,6 @@ from shapely import wkt
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "gee"))
-from utils.known_lakes import name_for  # noqa: E402
 
 FIRST_YEAR   = 2019            # Sentinel-2 surface reflectance covers Nepal from 2019
 FRAME_PX     = 480
@@ -210,6 +209,7 @@ def fetch_snapshot(region, year: int) -> bytes | None:
 # ---------------------------------------------------------------------------
 
 def process_lake(s3, lake_id: str, hist: pd.DataFrame, latest_year: int) -> str:
+    name = hist["name"].iloc[0] if "name" in hist and isinstance(hist["name"].iloc[0], str) else None
     prefix = f"media/lakes/{lake_id}"
     by_year = {int(r.detection_year): (wkt.loads(r.geometry_wkt), float(r.area_ha))
                for r in hist.itertuples()}
@@ -223,7 +223,7 @@ def process_lake(s3, lake_id: str, hist: pd.DataFrame, latest_year: int) -> str:
 
     c = geoms[-1].centroid
     latest_ha = by_year[max(by_year)][1]
-    title = f"{name_for(c.y, c.x, latest_ha, f'Lake {lake_id}')} · {c.y:.3f}N {c.x:.3f}E"
+    title = f"{name or 'Unnamed lake'} · {c.y:.3f}N {c.x:.3f}E"
 
     frames = []
     for year in range(FIRST_YEAR, latest_year + 1):

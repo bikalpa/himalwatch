@@ -41,7 +41,6 @@ import pandas as pd
 import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.known_lakes import name_for  # noqa: E402
 
 BUCKET      = os.getenv("R2_BUCKET_NAME", "himalwatch-data")
 PUBLIC_URL  = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
@@ -83,8 +82,11 @@ def alert_key(a: dict) -> str:
 def enrich(a: dict, gif_ids: set) -> dict:
     lat, lon = float(a["centroid_lat"]), float(a["centroid_lon"])
     a = dict(a)
-    a["name"]    = name_for(lat, lon, float(a["latest_area_sqm"]) / 1e4,
-                            fallback=f"Lake {a['lake_id']}")
+    name, hint = a.get("name"), a.get("name_hint")
+    if not isinstance(name, str) or not name:
+        name = (f"Unnamed lake {hint}" if isinstance(hint, str) and hint
+                else f"Unnamed lake {a['lake_id']}")
+    a["name"]    = name
     a["map_url"] = f"https://www.google.com/maps/@{lat:.5f},{lon:.5f},2500m/data=!3m1!1e3"
     a["gif_url"] = (f"{PUBLIC_URL}/media/lakes/{a['lake_id']}/growth.gif"
                     if a["lake_id"] in gif_ids else None)
