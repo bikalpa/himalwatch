@@ -135,7 +135,10 @@ ALERT_EMAIL_TO=           # optional — comma-separated recipients (keep in sec
   licence. Show it unaltered, with attribution and the DOI link; do not use it
   commercially or paraphrase the descriptions.
 - `pipeline/news/lake_news.py` collects coverage for named lakes from Google
-  News RSS into R2 `news/lakes.json`. With the optional `ANTHROPIC_API_KEY`
-  secret Claude judges relevance and duplicates (model from repo variable
-  `NEWS_MODEL`, default `claude-opus-5-5`); without it keyword rules decide.
+  News RSS into R2 `news/lakes.json`. With an optional `GEMINI_API_KEY`
+  (free tier) or `ANTHROPIC_API_KEY` secret an AI model judges relevance and
+  duplicates (repo variables `NEWS_PROVIDER`, `NEWS_MODEL`); without one,
+  keyword rules decide.
+- Repo variable `ALERT_HOLD` (e.g. `SUDDEN`) keeps those severities on the
+  dashboard but out of notifications until it is cleared.
   Hand-picked links for unnamed lakes go in `pipeline/utils/lake_links.json`.

@@ -27,6 +27,10 @@ Env:
                      Resend account was created with — fine for personal alerts)
   DASHBOARD_URL      optional
   DRY_RUN=1          print instead of sending; do not update state
+  ALERT_HOLD         optional, comma-separated severities that are shown on the
+                     dashboard but not notified yet (e.g. "SUDDEN" while a new
+                     alert type is being checked by hand). They are sent once
+                     the hold is lifted.
 """
 from __future__ import annotations
 
@@ -47,6 +51,7 @@ BUCKET      = os.getenv("R2_BUCKET_NAME", "himalwatch-data")
 PUBLIC_URL  = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
 STATE_KEY   = "alerts/notified.json"
 DRY_RUN     = os.getenv("DRY_RUN") == "1"
+HOLD        = {s.strip().upper() for s in os.getenv("ALERT_HOLD", "").split(",") if s.strip()}
 MAX_GIFS    = 8      # GIFs embedded per notification
 SEV_ORDER   = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "SUDDEN": 3}
 SEV_COLOUR  = {"HIGH": "#ef4444", "MEDIUM": "#f97316", "LOW": "#eab308", "SUDDEN": "#a855f7"}
@@ -299,6 +304,11 @@ def main():
         notified = {}
 
     new = select_new(current, notified)
+    held = [a for a in new if a["alert_severity"] in HOLD]
+    if held:
+        new = [a for a in new if a["alert_severity"] not in HOLD]
+        print(f"{len(held)} new alert(s) held back by ALERT_HOLD={','.join(sorted(HOLD))}: "
+              + ", ".join(a["name"] for a in held))
     print(f"{len(new)} new since last notification.")
 
     repo = os.getenv("GITHUB_REPO", "")

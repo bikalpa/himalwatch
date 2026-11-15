@@ -207,16 +207,18 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install boto3 python-dotenv requests pandas pyarrow anthropic
+      - run: pip install boto3 python-dotenv requests pandas pyarrow anthropic google-genai
       - name: Collect news and coverage for named lakes
         # Best effort: a blocked or slow news search must never stop the alerts.
         continue-on-error: true
         timeout-minutes: 20
         run: python pipeline/news/lake_news.py
         env:
-          # Optional: lets Claude judge relevance and duplicates. Without it,
-          # keyword rules alone decide.
+          # Optional: an AI model judges relevance and duplicates. Either key
+          # works (Gemini has a free tier). Without one, keyword rules decide.
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          NEWS_PROVIDER:        ${{ vars.NEWS_PROVIDER }}
           NEWS_MODEL:           ${{ vars.NEWS_MODEL }}
           R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
           R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -241,6 +243,7 @@ jobs:
           ALERT_EMAIL_TO:       ${{ secrets.ALERT_EMAIL_TO }}
           ALERT_EMAIL_FROM:     ${{ vars.ALERT_EMAIL_FROM }}
           DASHBOARD_URL:        ${{ vars.DASHBOARD_URL }}
+          ALERT_HOLD:           ${{ vars.ALERT_HOLD }}
           GITHUB_TOKEN:         ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO:          ${{ github.repository }}
           DRY_RUN:              ${{ github.event.inputs.notify == 'false' && '1' || '' }}

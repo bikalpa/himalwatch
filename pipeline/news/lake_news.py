@@ -12,13 +12,18 @@ with no searchable name, e.g. a new reservoir) and is merged in the same way.
 
 Unnamed lakes are skipped: there is nothing to search for.
 
-AI review (optional, needs ANTHROPIC_API_KEY): keyword rules cannot tell the
+AI review (optional, needs GEMINI_API_KEY or ANTHROPIC_API_KEY): keyword rules cannot tell the
 Panch Pokhari in Sindhupalchok from the one in Sikkim, or spot the same wire
 story under five headlines. When a key is set, Claude reads each lake's new
 candidates next to the lake's location and decides which are really about that
 lake and which repeat a story already kept. Every candidate is judged once:
 rejected titles are remembered under "_rejected" so later runs skip them.
 Without a key the keyword rules alone decide.
+
+Providers: Google Gemini (GEMINI_API_KEY; has a free tier — on it Google may
+use the content to improve its products, which is fine for public headlines)
+or Claude (ANTHROPIC_API_KEY). If both keys are set Gemini is used unless
+NEWS_PROVIDER=anthropic. NEWS_MODEL overrides the model.
 
 Usage:
     python pipeline/news/lake_news.py                       # R2 in, R2 out
@@ -43,9 +48,10 @@ NEWS_KEY   = "news/lakes.json"
 CURATED    = Path(__file__).parent.parent / "utils" / "lake_links.json"
 RSS        = "https://news.google.com/rss/search"
 PAUSE_S    = 1.5
+AI_PAUSE_S = 6.0         # between AI calls: stays under free-tier requests-per-minute limits
 MAX_ITEMS  = 40          # kept per lake
 REJECTED   = "_rejected"  # store key: {lake_id: [normalised titles judged not relevant]}
-AI_MODEL   = os.getenv("NEWS_MODEL") or "claude-opus-5-5"
+AI_DEFAULT_MODEL = {"gemini": "gemini-3.8-flash", "anthropic": "claude-opus-5-5"}
 AI_SCHEMA  = {
     "type": "object",
     "properties": {"items": {"type": "array", "items": {
@@ -53,7 +59,7 @@ AI_SCHEMA  = {
         "properties": {
             "index":        {"type": "integer"},
             "about_lake":   {"type": "boolean"},
-            "duplicate_of": {"type": ["integer", "null"]},
+            "duplicate_of": {"type": "integer"},   # -1 = not a duplicate
         },
         "required": ["index", "about_lake", "duplicate_of"],
         "additionalProperties": False,
@@ -148,21 +154,89 @@ def search(variant: str) -> list:
             if is_about(i["title"], variant) and not SKIP_SOURCE.search(i["source"] or "")]
 
 
+def ai_provider():
+    """'gemini' | 'anthropic' | None, from which keys are configured."""
+    want = (os.getenv("NEWS_PROVIDER") or "").lower()
+    have = [p for p, key in (("gemini", "GEMINI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"))
+            if os.getenv(key)]
+    return want if want in have else (have[0] if have else None)
+
+
+def ai_model(provider: str) -> str:
+    return os.getenv("NEWS_MODEL") or AI_DEFAULT_MODEL[provider]
+
+
 def ai_client():
-    """Anthropic client if a key is configured, else None (keyword rules only)."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    """(provider, client) if a key is configured, else None (keyword rules only)."""
+    provider = ai_provider()
+    if provider == "gemini":
+        from google import genai
+        return provider, genai.Client()          # reads GEMINI_API_KEY
+    if provider == "anthropic":
+        import anthropic
+        return provider, anthropic.Anthropic()   # reads ANTHROPIC_API_KEY
+    return None
+
+
+def _strip_additional(schema):
+    """The same schema without additionalProperties, for Gemini."""
+    if isinstance(schema, dict):
+        return {k: _strip_additional(v) for k, v in schema.items() if k != "additionalProperties"}
+    return schema
+
+
+def _ask_gemini(client, prompt: str):
+    """JSON answer from Gemini's Interactions API, or None (try again next run)."""
+    try:
+        interaction = client.interactions.create(
+            model=ai_model("gemini"),
+            input=prompt,
+            response_format={"type": "text", "mime_type": "application/json",
+                             "schema": _strip_additional(AI_SCHEMA)},
+            generation_config={"thinking_level": "low"},
+        )
+        if interaction.status != "completed":
+            print(f"  AI review ended with status {interaction.status}; candidates wait for the next run")
+            return None
+        return json.loads(interaction.output_text)
+    except Exception as ex:  # noqa: BLE001 — free tier: rate limits are routine, never fatal
+        print(f"  AI review failed ({type(ex).__name__}: {str(ex)[:120]}); candidates wait for the next run")
         return None
+
+
+def _ask_anthropic(client, prompt: str):
+    """JSON answer from Claude, or None (try again next run)."""
     import anthropic
-    return anthropic.Anthropic()
+    try:
+        response = client.beta.messages.create(
+            model=ai_model("anthropic"),
+            max_tokens=16000,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": "low",
+                           "format": {"type": "json_schema", "schema": AI_SCHEMA}},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if response.stop_reason != "end_turn":
+            print(f"  AI review stopped with {response.stop_reason}; candidates wait for the next run")
+            return None
+        return json.loads(next(b.text for b in response.content if b.type == "text"))
+    except anthropic.RateLimitError:
+        print("  AI review rate-limited; candidates wait for the next run")
+    except anthropic.APIStatusError as ex:
+        print(f"  AI review failed ({ex.status_code}); candidates wait for the next run")
+    except (anthropic.APIConnectionError, StopIteration, ValueError) as ex:
+        print(f"  AI review failed ({type(ex).__name__}); candidates wait for the next run")
+    return None
 
 
 def ai_review(client, lake: dict, kept: list, candidates: list) -> tuple:
     """
     Ask Claude which candidates are about this lake and which repeat a story.
-    Returns (accepted, rejected). On any failure the candidates are returned
-    untouched as accepted=[] / rejected=[] so they are simply judged next run.
+    client is (provider, sdk client). Returns (accepted, rejected); on any
+    failure both are empty, so the candidates are simply judged next run.
     """
-    import anthropic
+    provider, sdk = client
     listing = "\n".join(f"[{i}] {c.get('date') or 'undated'} | {c.get('source') or '?'} | {c['title']}"
                         for i, c in enumerate(candidates))
     already = "\n".join(f"- {k.get('date') or 'undated'} | {k['title']}" for k in kept[:MAX_ITEMS]) or "(none)"
@@ -186,7 +260,7 @@ a short accurate list is worth more to the reader than a long doubtful one.
 - duplicate_of: if the item reports the same story as an EARLIER-numbered candidate (the same article \
 syndicated or lightly reworded by another outlet), give that candidate's index. Separate articles about \
 the same event by different newsrooms are not duplicates. If it repeats something in the already-kept \
-list, set about_lake to false. Otherwise null.
+list, set about_lake to false. Use -1 when it is not a duplicate.
 
 Already kept for this lake:
 {already}
@@ -195,37 +269,20 @@ Candidates:
 {listing}
 
 Return one entry per candidate index."""
+    answer = (_ask_gemini if provider == "gemini" else _ask_anthropic)(sdk, prompt)
     try:
-        response = client.beta.messages.create(
-            model=AI_MODEL,
-            max_tokens=16000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            output_config={"effort": "low",
-                           "format": {"type": "json_schema", "schema": AI_SCHEMA}},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        if response.stop_reason != "end_turn":
-            print(f"  AI review for {lake['name']} stopped with {response.stop_reason}; keeping for next run")
-            return [], []
-        text = next(b.text for b in response.content if b.type == "text")
-        verdicts = {v["index"]: v for v in json.loads(text)["items"]}
-    except anthropic.RateLimitError:
-        print("  AI review rate-limited; candidates wait for the next run")
-        return [], []
-    except anthropic.APIStatusError as ex:
-        print(f"  AI review failed ({ex.status_code}); candidates wait for the next run")
-        return [], []
-    except (anthropic.APIConnectionError, StopIteration, ValueError, KeyError) as ex:
-        print(f"  AI review failed ({type(ex).__name__}); candidates wait for the next run")
+        verdicts = {int(v["index"]): v for v in answer["items"]} if answer else None
+    except (KeyError, TypeError, ValueError):
+        verdicts = None
+    if verdicts is None:
         return [], []
     accepted, rejected = [], []
     for i, c in enumerate(candidates):
         v = verdicts.get(i)
         if v is None:
             continue                      # not judged: try again next run
-        dup = v["duplicate_of"]
-        if v["about_lake"] and not (isinstance(dup, int) and 0 <= dup < i):
+        dup = v.get("duplicate_of")
+        if v.get("about_lake") and not (isinstance(dup, int) and 0 <= dup < i):
             accepted.append(c)
         else:
             rejected.append(c)
@@ -268,6 +325,7 @@ def collect(named: dict, store: dict, limit: int | None = None,
             if client and lakes and fresh:
                 # Two lakes can share a name, so each is judged against its own location.
                 fresh, rejected = ai_review(client, lakes[lake_id], kept, fresh)
+                time.sleep(AI_PAUSE_S)
                 if rejected:
                     rejected_store[lake_id] = sorted(
                         set(rejected_store.get(lake_id, [])) | {norm_title(i["title"]) for i in rejected})
@@ -327,7 +385,8 @@ def main():
                          "region": str(r.tile).replace("_", " ")}
              for r in inv.rename(columns={"name": "name_"}).itertuples() if r.lake_id in named}
     client = ai_client()
-    print("AI review: " + (f"on ({AI_MODEL})" if client else "off (no ANTHROPIC_API_KEY) — keyword rules only"))
+    print("AI review: " + (f"on ({client[0]}, {ai_model(client[0])})" if client
+                           else "off (no GEMINI_API_KEY or ANTHROPIC_API_KEY) — keyword rules only"))
     store = add_curated(collect(named, store, args.limit, lakes, client))
     n_links = sum(len(v) for k, v in store.items() if k != REJECTED)
     print(f"{n_links} links for {len(store) - (REJECTED in store)} lakes")
