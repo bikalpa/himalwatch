@@ -90,7 +90,7 @@ GEE (Sentinel-2) → lake_detection.py → raw/lakes/{tile}/{year}/lakes.parquet
 **Storage**: Cloudflare R2 (`himalwatch-data`). Geometry is WKT so DuckDB needs no spatial extension. Per-lake season snapshots (`media/lakes/{id}/{year}.png`) are kept permanently and reused; only the newest season is re-fetched.
 
 ### Growth alerts
-A lake is flagged GROWING when: seen in ≥ 5 seasons, seen in one of the two newest seasons for its tile, Spearman rank correlation of area vs year ≥ 0.9, and recent area (median of last k seasons) ≥ 10% and ≥ 1 ha above early area (median of first k), k = min(3, n/2). Severity by that growth: LOW 10–25%, MEDIUM 25–50%, HIGH > 50%. Tuned on the 2019–2026 backfill: flags Imja Tsho and Lower Barun, ignores lakes whose area just jumps around. Shrinking lakes are not alerted.
+A lake is flagged GROWING when: it lies inside Nepal or within ~5 km of the border (`in_nepal`, set by `link_lakes.py` from `pipeline/utils/nepal_boundary.geojson`; lakes further into Tibet are tracked but never alerted), seen in ≥ 5 seasons, seen in one of the two newest seasons for its tile, Spearman rank correlation of area vs year ≥ 0.9, and recent area (median of last k seasons) ≥ 10% and ≥ 1 ha above early area (median of first k), k = min(3, n/2). Severity by that growth: LOW 10–25%, MEDIUM 25–50%, HIGH > 50%. Tuned on the 2019–2026 backfill: flags Imja Tsho and Lower Barun, ignores lakes whose area just jumps around. Shrinking lakes are not alerted.
 
 `pipeline/alerts/fanout.py` sends one digest per run for lakes not yet announced at their current severity (state in R2 `alerts/notified.json`): a GitHub issue that @-mentions the repo owner (GitHub emails it), plus an HTML email via Resend if `RESEND_API_KEY` and `ALERT_EMAIL_TO` secrets are set.
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import io
 import os
 import re
@@ -35,6 +36,8 @@ from pathlib import Path
 
 import pandas as pd
 from shapely import wkt
+from shapely.geometry import shape
+from shapely.prepared import prep
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
@@ -50,6 +53,18 @@ MIN_OVERLAP_FRAC = 0.10
 SEASON_START_MM = "09-01"
 # Pieces of one lake split by a strip/tile seam lie within this distance (~10 m).
 SEAM_TOLERANCE_DEG = 0.0001
+# The processing tiles are rectangles that reach well into Tibet. Lakes are
+# still tracked there, but only lakes inside Nepal (plus this margin, ~5 km,
+# for lakes sitting on the border divide) can raise alerts.
+# Boundary: geoBoundaries NPL ADM0 simplified (Open Data Nepal, CC BY 4.0).
+NEPAL_BOUNDARY = Path(__file__).parent / "utils" / "nepal_boundary.geojson"
+NEPAL_MARGIN_DEG = 0.05
+
+
+def nepal_area():
+    """Prepared Nepal polygon, buffered by the border margin."""
+    gj = json.loads(NEPAL_BOUNDARY.read_text())
+    return prep(shape(gj["features"][0]["geometry"]).buffer(NEPAL_MARGIN_DEG))
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +96,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
     raw = raw[~raw["geom"].apply(lambda g: g.is_empty)].reset_index(drop=True)
 
     out = []
+    nepal = nepal_area()
     grp = raw.reset_index(drop=True)
     geoms = grp["geom"].tolist()
     years = grp["detection_year"].tolist()
@@ -114,6 +130,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
         lake_id = hashlib.sha1(f"{anchor.y:.4f},{anchor.x:.4f}".encode()).hexdigest()[:8]
         # A lake straddling a tile edge belongs to the tile holding most of it
         tile = comp.groupby("tile")["area_sqm"].sum().idxmax()
+        in_nepal = any(nepal.intersects(g) for g in comp["geom"])
 
         for year, yr in comp.groupby("detection_year"):
             geom = unary_union(yr["geom"].tolist())
@@ -144,12 +161,13 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
                 "season_end":     str(yr["season_end"].iloc[0]),
                 "detected_at":    str(yr["detected_at"].max()),
                 "polygon_count":  len(yr),
+                "in_nepal":       in_nepal,
             })
 
     cols = ["lake_id", "tile", "detection_year", "geometry_wkt", "centroid_lat",
             "centroid_lon", "area_sqm", "area_ha", "mean_elevation", "mean_ndwi",
             "mean_ndsi", "volume_m3", "volume_mcm", "season_start", "season_end",
-            "detected_at", "polygon_count"]
+            "detected_at", "polygon_count", "in_nepal"]
     return pd.DataFrame(out, columns=cols)
 
 
@@ -211,8 +229,9 @@ def main():
     linked = link_detections(raw)
     n_lakes = linked["lake_id"].nunique()
     multi = (linked.groupby("lake_id").size() >= 2).sum()
+    n_nepal = linked.loc[linked["in_nepal"], "lake_id"].nunique()
     print(f"Linked {len(raw)} polygons -> {n_lakes} lakes "
-          f"({multi} seen in 2+ years), {len(linked)} lake-year rows")
+          f"({multi} seen in 2+ years, {n_nepal} in Nepal), {len(linked)} lake-year rows")
 
     if args.out:
         linked.to_parquet(args.out, index=False)

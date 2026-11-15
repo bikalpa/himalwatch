@@ -31,6 +31,9 @@ select
     season_end,
     detected_at,
 
+    -- false for lakes on the Tibetan side of the border (tracked, never alerted)
+    cast(in_nepal as boolean) as in_nepal,
+
     current_timestamp as loaded_at
 
 from read_parquet(

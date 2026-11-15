@@ -6,6 +6,7 @@
 -- Growth alert rule (all must hold). Tuned on the 2019–2026 backfill so that
 -- steady growers (Imja Tsho, Lower Barun) are flagged and lakes whose area
 -- merely jumps around between years (cloud, ice, wet ground) are not:
+--   0. Inside Nepal or within ~5 km of its border (in_nepal, from link_lakes.py)
 --   1. Observed in >= 5 seasons
 --   2. Observed in one of the two newest seasons processed for its tile
 --   3. Consistent upward trend: Spearman rank correlation of area vs year >= 0.9
@@ -71,6 +72,7 @@ joined as (
         l.centroid_lon,
         l.mean_elevation,
         l.geometry_wkt,
+        l.in_nepal,
 
         l.area_sqm   as latest_area_sqm,
         l.area_ha    as latest_area_ha,
@@ -97,7 +99,8 @@ joined as (
         s.detection_count,
 
         coalesce(
-            s.detection_count >= 5
+            l.in_nepal
+            and s.detection_count >= 5
             and s.latest_detection_year >= t.tile_latest_year - 1
             and s.trend_rho >= 0.9
             and s.recent_area_sqm >= 1.10 * s.baseline_area_sqm
