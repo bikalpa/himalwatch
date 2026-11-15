@@ -50,6 +50,9 @@ RSS        = "https://news.google.com/rss/search"
 PAUSE_S    = 1.5
 AI_PAUSE_S = 6.0         # between AI calls: stays under free-tier requests-per-minute limits
 MAX_ITEMS  = 40          # kept per lake
+BUDGET_S   = 14 * 60         # stop collecting after this long and save what there is
+AI_TIMEOUT_S = 90            # one AI call; a stuck call must not eat the whole budget
+AI_MAX_FAILS = 3             # consecutive failed AI calls before falling back to keyword rules
 REVIEWED   = "_ai_reviewed"  # store key: [lake_id whose stored items went through the AI review]
 REJECTED   = "_rejected"  # store key: {lake_id: [normalised titles judged not relevant]}
 AI_DEFAULT_MODEL = {"gemini": "gemini-3.8-flash", "anthropic": "claude-opus-5-5"}
@@ -172,10 +175,12 @@ def ai_client():
     provider = ai_provider()
     if provider == "gemini":
         from google import genai
-        return provider, genai.Client()          # reads GEMINI_API_KEY
+        from google.genai import types
+        return provider, genai.Client(http_options=types.HttpOptions(   # reads GEMINI_API_KEY
+            timeout=AI_TIMEOUT_S * 1000, retry_options=types.HttpRetryOptions(attempts=1)))
     if provider == "anthropic":
         import anthropic
-        return provider, anthropic.Anthropic()   # reads ANTHROPIC_API_KEY
+        return provider, anthropic.Anthropic(timeout=AI_TIMEOUT_S, max_retries=1)   # reads ANTHROPIC_API_KEY
     return None
 
 
@@ -301,9 +306,19 @@ def collect(named: dict, store: dict, limit: int | None = None,
         by_name.setdefault(name, []).append(lake_id)
     rejected_store = store.setdefault(REJECTED, {})
     reviewed = set(store.get(REVIEWED, []))
-    failures = 0
-    for n, (name, ids) in enumerate(sorted(by_name.items())):
+    failures = ai_fails = 0
+    started = time.monotonic()
+    # Resume after the name the last run stopped at, so a run cut short by the
+    # time budget does not starve the end of the alphabet.
+    order = sorted(by_name.items())
+    cursor = store.pop("_cursor", "")
+    order = [x for x in order if x[0] > cursor] + [x for x in order if x[0] <= cursor]
+    for n, (name, ids) in enumerate(order):
         if limit and n >= limit:
+            break
+        if time.monotonic() - started > BUDGET_S:
+            print(f"Time budget used up after {n} of {len(by_name)} names — saving; the rest wait for the next run.")
+            store["_cursor"] = order[n - 1][0]
             break
         found = []
         for v in variants(name):
@@ -336,8 +351,15 @@ def collect(named: dict, store: dict, limit: int | None = None,
                 if asked and not fresh and not rejected:   # the review failed
                     if recheck:
                         kept = before
+                    ai_fails += 1
+                    if ai_fails >= AI_MAX_FAILS:
+                        print("AI review keeps failing — keyword rules only for the rest of this run.")
+                        client = None
                 else:
+                    ai_fails = 0
                     reviewed.add(lake_id)
+                    if rejected:
+                        print(f"    {lakes[lake_id]['name']} ({lake_id}): kept {len(fresh)}, rejected {len(rejected)}")
                 if rejected:
                     rejected_store[lake_id] = sorted(
                         set(rejected_store.get(lake_id, [])) | {norm_title(i["title"]) for i in rejected})

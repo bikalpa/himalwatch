@@ -219,6 +219,7 @@ jobs:
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
           NEWS_PROVIDER:        ${{ vars.NEWS_PROVIDER }}
+          PYTHONUNBUFFERED: "1"
           NEWS_MODEL:           ${{ vars.NEWS_MODEL }}
           R2_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT_URL }}
           R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
