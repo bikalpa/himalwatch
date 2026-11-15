@@ -134,8 +134,10 @@ function transformR2Lakes(geojson) {
     const lat  = p.centroid_lat ?? (f.geometry?.coordinates?.[1] ?? 28.0);
     const area = p.latest_area_ha ?? 0;
     // Same figure the alert digest reports (recent vs earliest seasons)
-    const chg  = p.growth_pct ?? p.area_change_pct ?? 0;
-    const base = chg !== -100 ? area / (1 + chg / 100) : area;
+    // A growth % from fewer than 5 seasons is noise (a lake half-hidden by
+    // cloud or ice one year reads as +3000% the next), so it is left blank.
+    const chg  = (p.detection_count ?? 0) >= 5 ? (p.growth_pct ?? p.area_change_pct ?? null) : null;
+    const base = chg != null && chg !== -100 ? area / (1 + chg / 100) : area;
     const named = lookupNamedLake(lon, lat);
     // Real per-season history from the pipeline: [[year, area_ha], ...]
     const hist  = Array.isArray(p.series) ? p.series : [];
@@ -510,7 +512,7 @@ function OverviewView({ lakes, alerts, onSelectLake }) {
   const highAlerts = alerts.filter(a=>a.sev==="HIGH");
   const expanding  = lakes.filter(l=>l.chg>15);
   const shrinking  = lakes.filter(l=>l.chg<-15);
-  const topExp     = [...lakes].sort((a,b)=>b.chg-a.chg).slice(0,5);
+  const topExp     = lakes.filter(l=>l.chg!=null).sort((a,b)=>b.chg-a.chg).slice(0,5);
   const topAlerts  = [...alerts].sort((a,b)=>{const o={HIGH:0,MEDIUM:1,LOW:2};return o[a.sev]-o[b.sev];}).slice(0,5);
 
   return (
@@ -592,7 +594,10 @@ function LakesView({ lakes, onSelectLake }) {
       (l.sev||"").toLowerCase().includes(qlo)
     ) : lakes;
     return [...r].sort((a,b) => {
-      const av = a[sortCol]??"", bv = b[sortCol]??"";
+      // Blank values always sort to the bottom, whichever direction
+      if (a[sortCol] == null || b[sortCol] == null)
+        return (a[sortCol] == null) - (b[sortCol] == null);
+      const av = a[sortCol], bv = b[sortCol];
       if (av === bv) return 0;
       return typeof av === "string" ? av.localeCompare(bv)*sortDir : (av-bv)*sortDir;
     });
@@ -624,7 +629,7 @@ function LakesView({ lakes, onSelectLake }) {
             <Th col="tile">Region</Th>
             <Th col="elev" right>Elev (m)</Th>
             <Th col="area" right>Area (ha)</Th>
-            <Th col="chg"  right>Change %</Th>
+            <Th col="chg"  right>Growth % (5+ seasons)</Th>
             <Th col="vol"  right>Vol (MCM)</Th>
             <Th col="n"    right>Obs.</Th>
             <Th col="lastDate">Last seen</Th>
