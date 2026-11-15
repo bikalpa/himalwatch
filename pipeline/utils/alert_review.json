@@ -1,0 +1,15 @@
+{
+  "_about": "Lakes whose alert was checked against the imagery by hand and found not to be a real change. They stay on the dashboard, with the note shown as the reason, but raise no alert. Remove an entry to let the rules decide again.",
+  "2b930ae4": {
+    "date": "2026-11-16",
+    "note": "an existing reservoir beside a town, visible full in 2019-2021 but missed by the detector while its water was dark and clear; it was drained in 2022 and refilled, not newly formed"
+  },
+  "53c1cb6a": {
+    "date": "2026-11-16",
+    "note": "the outline sits on a snowfield; no open water is visible in any season"
+  },
+  "d53f7751": {
+    "date": "2026-11-16",
+    "note": "a shallow seasonal pond on a wetland plain that floods and dries; not a dammed or glacial lake"
+  }
+}

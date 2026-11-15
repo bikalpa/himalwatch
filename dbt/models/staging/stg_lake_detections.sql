@@ -45,6 +45,9 @@ select
     cast(icimod_rank as varchar) as icimod_rank,
     cast(icimod_note as varchar) as icimod_note,
 
+    -- set when an alert on this lake was checked by hand and rejected
+    cast(review_note as varchar) as review_note,
+
     current_timestamp as loaded_at
 
 from read_parquet(

@@ -27,6 +27,9 @@
 -- Needing two seasons after the jump costs a year, but drops the one-season
 -- spikes that cloud, snow and lake ice produce.
 --
+-- A lake listed in pipeline/utils/alert_review.json (review_note) was checked
+-- by hand and raises neither kind of alert.
+--
 -- alert_reason says in words why a lake is or is not flagged.
 
 {{
@@ -118,6 +121,7 @@ joined as (
         l.icimod_id,
         l.icimod_rank,
         l.icimod_note,
+        l.review_note,
 
         l.area_sqm   as latest_area_sqm,
         l.area_ha    as latest_area_ha,
@@ -148,10 +152,12 @@ joined as (
         j.sudden_before_sqm,
         j.sudden_after_sqm,
         coalesce(j.sudden_year is not null
+                 and l.review_note is null
                  and s.latest_detection_year >= t.tile_latest_year - 1, false) as is_sudden,
 
         coalesce(
             l.in_nepal
+            and l.review_note is null
             and s.detection_count >= 5
             and s.latest_detection_year >= t.tile_latest_year - 1
             and s.trend_rho >= 0.9
@@ -184,6 +190,8 @@ select
             || round(sudden_before_sqm / 1e4, 1) || ' ha to at least '
             || round(sudden_after_sqm / 1e4, 1) || ' ha in ' || sudden_year
             || ' and has stayed that size.'
+        when review_note is not null then
+            'Not flagged: checked by hand against the imagery — ' || review_note || '.'
         when latest_detection_year < tile_latest_year - 1 then
             'Not flagged: not detected in the last two seasons (last seen '
             || latest_detection_year || ').'

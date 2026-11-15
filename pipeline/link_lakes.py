@@ -75,6 +75,8 @@ INDIA_BOUNDARY = Path(__file__).parent / "utils" / "india_boundary.geojson"
 # ICIMOD/UNDP 2020 list of potentially dangerous glacial lakes (rank + reason).
 # See the _source block in the file for citation and licence (CC BY-NC-ND 4.0).
 ICIMOD_PDGL = Path(__file__).parent / "utils" / "icimod_pdgl.json"
+# Alerts checked by hand against the imagery and found not to be real changes.
+ALERT_REVIEW = Path(__file__).parent / "utils" / "alert_review.json"
 ICIMOD_MATCH_DEG = 0.003   # ~300 m: ICIMOD's point must be this close to our outline
 
 
@@ -230,7 +232,10 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
             })
 
     icimod = match_icimod(outlines)
+    reviewed = json.loads(ALERT_REVIEW.read_text()) if ALERT_REVIEW.exists() else {}
     for row in out:
+        r = reviewed.get(row["lake_id"])
+        row["review_note"] = f"{r['note']} (checked {r['date']})" if isinstance(r, dict) else None
         e = icimod.get(row["lake_id"])
         row["icimod_id"]   = e["id"] if e else None
         row["icimod_rank"] = e["rank"] if e else None
@@ -240,7 +245,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
             "centroid_lon", "area_sqm", "area_ha", "mean_elevation", "mean_ndwi",
             "mean_ndsi", "volume_m3", "volume_mcm", "season_start", "season_end",
             "detected_at", "polygon_count", "in_nepal", "country", "name", "name_hint",
-            "icimod_id", "icimod_rank", "icimod_note"]
+            "icimod_id", "icimod_rank", "icimod_note", "review_note"]
     return pd.DataFrame(out, columns=cols)
 
 
