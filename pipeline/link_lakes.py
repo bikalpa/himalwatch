@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pandas as pd
 from shapely import wkt
-from shapely.geometry import shape
+from shapely.geometry import Point, shape
 from shapely.prepared import prep
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
@@ -62,15 +62,34 @@ SEAM_TOLERANCE_DEG = 0.00025
 # The processing tiles are rectangles that reach well into Tibet. Lakes are
 # still tracked there, but only lakes inside Nepal (plus this margin, ~5 km,
 # for lakes sitting on the border divide) can raise alerts.
-# Boundary: geoBoundaries NPL ADM0 simplified (Open Data Nepal, CC BY 4.0).
+# Boundary: geoBoundaries NPL ADM0, full resolution simplified to ~30 m
+# (CC BY 4.0). The heavily simplified version it replaced was up to several km
+# off along the crest, which is exactly where the lakes are.
 NEPAL_BOUNDARY = Path(__file__).parent / "utils" / "nepal_boundary.geojson"
 NEPAL_MARGIN_DEG = 0.05
+# Indian border states (Uttarakhand, Himachal Pradesh, Sikkim) from
+# OpenStreetMap. A lake outside Nepal and outside these is in China (Tibet):
+# the tiles touch no other country. Where claims overlap (Kalapani /
+# Limpiyadhura) the Nepal boundary file wins — this is a display label only.
+INDIA_BOUNDARY = Path(__file__).parent / "utils" / "india_boundary.geojson"
 
 
 def nepal_area():
     """Prepared Nepal polygon, buffered by the border margin."""
     gj = json.loads(NEPAL_BOUNDARY.read_text())
     return prep(shape(gj["features"][0]["geometry"]).buffer(NEPAL_MARGIN_DEG))
+
+
+def country_lookup():
+    """Function (lon, lat) -> 'Nepal' | 'India' | 'China'."""
+    def load(path):
+        return prep(shape(json.loads(path.read_text())["features"][0]["geometry"]))
+    nepal, india = load(NEPAL_BOUNDARY), load(INDIA_BOUNDARY)
+
+    def country(lon, lat):
+        p = Point(lon, lat)
+        return "Nepal" if nepal.contains(p) else "India" if india.contains(p) else "China"
+    return country
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +123,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
     out = []
     nepal = nepal_area()
     names = LakeNames()
+    country_of = country_lookup()
     grp = raw.reset_index(drop=True)
     geoms = grp["geom"].tolist()
     years = grp["detection_year"].tolist()
@@ -141,6 +161,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
         # Name from the newest outline; unnamed lakes get a "near X" hint instead.
         last_year = comp["detection_year"].max()
         newest = unary_union(comp.loc[comp["detection_year"] == last_year, "geom"].tolist())
+        country = country_of(newest.centroid.x, newest.centroid.y)
         name = names.name_for(newest)
         name_hint = None if name else names.hint_for(newest.centroid.y, newest.centroid.x)
 
@@ -174,6 +195,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
                 "detected_at":    str(yr["detected_at"].max()),
                 "polygon_count":  len(yr),
                 "in_nepal":       in_nepal,
+                "country":        country,
                 "name":           name,
                 "name_hint":      name_hint,
             })
@@ -181,7 +203,7 @@ def link_detections(raw: pd.DataFrame) -> pd.DataFrame:
     cols = ["lake_id", "tile", "detection_year", "geometry_wkt", "centroid_lat",
             "centroid_lon", "area_sqm", "area_ha", "mean_elevation", "mean_ndwi",
             "mean_ndsi", "volume_m3", "volume_mcm", "season_start", "season_end",
-            "detected_at", "polygon_count", "in_nepal", "name", "name_hint"]
+            "detected_at", "polygon_count", "in_nepal", "country", "name", "name_hint"]
     return pd.DataFrame(out, columns=cols)
 
 

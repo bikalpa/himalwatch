@@ -33,6 +33,8 @@ select
 
     -- false for lakes on the Tibetan side of the border (tracked, never alerted)
     cast(in_nepal as boolean) as in_nepal,
+    -- 'Nepal' | 'India' | 'China', from the lake's newest centroid
+    cast(country   as varchar) as country,
 
     -- OpenStreetMap name, or for unnamed lakes a hint like '3.2 km NE of Imja Tsho'
     cast(name      as varchar) as name,

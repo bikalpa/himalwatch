@@ -118,7 +118,8 @@ def issue_body(new: list, owner: str, dashboard: str) -> str:
     for a in new:
         lines.append(
             f"| **{a['alert_severity']}** | [{a['name']}]({a['map_url']}) "
-            f"({a['centroid_lat']:.4f}°N, {a['centroid_lon']:.4f}°E, {a['tile']}) "
+            f"({a['centroid_lat']:.4f}°N, {a['centroid_lon']:.4f}°E, {a['tile']}"
+            f"{', ' + a['country'] if isinstance(a.get('country'), str) else ''}) "
             f"| {a['now_ha']:.1f} ha | {a['base_ha']:.1f} ha | **{a['growth_pct']:+.0f}%** "
             f"| {int(a['detection_count'])} | {float(a['mean_elevation']):.0f} m |"
         )

@@ -154,6 +154,7 @@ function transformR2Lakes(geojson) {
       n:        p.detection_count ?? 1,
       sev:      p.alert_severity || null,
       tile:     p.tile || "",
+      country:  p.country || null,
       series:   hist.length ? hist.map(h => h[1]) : [Math.max(0, base), area],
       years:    hist.length ? hist.map(h => h[0]) : null,
       growth:   p.growth_pct ?? null,
@@ -280,7 +281,7 @@ function DetailPanel({ lake, onClose }) {
           <a href={gmaps} target="_blank" rel="noopener" title="Open this location in Google Maps"
              style={{color:"inherit", textDecoration:"none"}}>{l.name} ↗</a>
         </div>
-        <div className="detail-sub">{l.id} · {TILE_LABELS[l.tile] || l.tile}</div>
+        <div className="detail-sub">{l.id} · {TILE_LABELS[l.tile] || l.tile}{l.country ? ` · ${l.country}` : ""}</div>
         <div className="detail-sub">
           {l.lat.toFixed(4)}°N, {l.lon.toFixed(4)}°E ·{" "}
           <a href={gmaps} target="_blank" rel="noopener" style={linkStyle}>Google Maps</a> ·{" "}
@@ -359,8 +360,55 @@ function DetailPanel({ lake, onClose }) {
   );
 }
 
+// ─── Shared filters (alert status + country) ────────────────────────────────
+const SEV_OPTIONS = [["HIGH","#ef4444"],["MEDIUM","#f97316"],["LOW","#eab308"],["NONE","#64748b"]];
+const COUNTRIES   = ["Nepal","India","China"];
+
+function applyFilters(lakes, f) {
+  return lakes.filter(l =>
+    (!f.sev     || (f.sev === "NONE" ? !l.sev : l.sev === f.sev)) &&
+    (!f.country || l.country === f.country));
+}
+
+// Click a row to show only that group; click it again to show everything.
+function FilterRows({ lakes, filters, setFilters }) {
+  const hasCountry = lakes.some(l => l.country);
+  const row = (key, val, label, dot, count) => {
+    const on = filters[key] === val, dim = filters[key] && !on;
+    return (
+      <div key={val} className="legend-row" role="button" tabIndex={0}
+           title={on ? "Show all" : `Show only ${label}`}
+           onClick={() => setFilters(f => ({ ...f, [key]: on ? null : val }))}
+           onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFilters(f => ({ ...f, [key]: on ? null : val })); } }}
+           style={{ cursor:"pointer", opacity: dim ? 0.4 : 1, fontWeight: on ? 700 : 400,
+                    color: on ? "var(--text)" : undefined, userSelect:"none" }}>
+        {dot && <div className="legend-dot" style={{ background: dot }}/>}
+        <span style={{ flex:1 }}>{label}</span>
+        <span style={{ fontSize:10, color:"var(--text-dim)", marginLeft:10 }}>{count}</span>
+      </div>
+    );
+  };
+  // Counts for one group respect the other group's filter
+  const bySev     = applyFilters(lakes, { country: filters.country });
+  const byCountry = applyFilters(lakes, { sev: filters.sev });
+  return (
+    <React.Fragment>
+      <div className="legend-title">Alert Status</div>
+      {SEV_OPTIONS.map(([v,col]) => row("sev", v, v === "NONE" ? "None" : v, col,
+        bySev.filter(l => v === "NONE" ? !l.sev : l.sev === v).length))}
+      {hasCountry && <div className="legend-title" style={{ marginTop:10 }}>Country</div>}
+      {hasCountry && COUNTRIES.map(c => row("country", c, c, null,
+        byCountry.filter(l => l.country === c).length))}
+      {(filters.sev || filters.country) &&
+        <div className="legend-row" role="button" tabIndex={0}
+             onClick={() => setFilters({ sev:null, country:null })}
+             style={{ cursor:"pointer", marginTop:6, color:"var(--accent)" }}>Clear filters</div>}
+    </React.Fragment>
+  );
+}
+
 // ─── Map View ─────────────────────────────────────────────────────────────────
-function MapView({ active, lakes, onSelectLake, selectedLake }) {
+function MapView({ active, lakes, allLakes, filters, setFilters, onSelectLake, selectedLake }) {
   const mapRef      = useRef(null);
   const elRef       = useRef(null);
   const popupRef    = useRef(null);
@@ -509,12 +557,7 @@ function MapView({ active, lakes, onSelectLake, selectedLake }) {
         ))}
       </div>
       <div className="map-legend">
-        <div className="legend-title">Alert Status</div>
-        {[["HIGH","#ef4444"],["MEDIUM","#f97316"],["LOW","#eab308"],["None","#64748b"]].map(([lbl,col]) => (
-          <div key={lbl} className="legend-row">
-            <div className="legend-dot" style={{ background: col }}/>{lbl}
-          </div>
-        ))}
+        <FilterRows lakes={allLakes} filters={filters} setFilters={setFilters}/>
       </div>
       <div style={{ position:"absolute", bottom:7, right:12, fontSize:10, color:"rgba(255,255,255,0.4)", zIndex:5, pointerEvents:"none" }}>
         © Esri · Sentinel-2
@@ -597,7 +640,7 @@ function OverviewView({ lakes, alerts, onSelectLake }) {
 }
 
 // ─── Lake List ────────────────────────────────────────────────────────────────
-function LakesView({ lakes, onSelectLake }) {
+function LakesView({ lakes, allLakes, filters, setFilters, onSelectLake }) {
   const [q, setQ]            = useState("");
   const [sortCol, setSortCol] = useState("chg");
   const [sortDir, setSortDir] = useState(-1);
@@ -608,6 +651,7 @@ function LakesView({ lakes, onSelectLake }) {
       l.name.toLowerCase().includes(qlo) ||
       l.id.includes(qlo) ||
       (TILE_LABELS[l.tile]||l.tile||"").toLowerCase().includes(qlo) ||
+      (l.country||"").toLowerCase().includes(qlo) ||
       (l.sev||"").toLowerCase().includes(qlo)
     ) : lakes;
     return [...r].sort((a,b) => {
@@ -635,15 +679,29 @@ function LakesView({ lakes, onSelectLake }) {
   return (
     <div className="lakes-view">
       <div className="lakes-toolbar">
-        <input className="search-input" placeholder="Filter by name, ID, region, alert…"
+        <input className="search-input" placeholder="Filter by name, ID, region, country, alert…"
           value={q} onChange={e=>setQ(e.target.value)}/>
-        <span className="table-count">{filtered.length} of {lakes.length} lakes</span>
+        <select className="search-input" style={{ width:"auto" }} aria-label="Alert status"
+          value={filters.sev || ""} onChange={e=>setFilters(f=>({ ...f, sev: e.target.value || null }))}>
+          <option value="">All alert levels</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
+          <option value="NONE">No alert</option>
+        </select>
+        <select className="search-input" style={{ width:"auto" }} aria-label="Country"
+          value={filters.country || ""} onChange={e=>setFilters(f=>({ ...f, country: e.target.value || null }))}>
+          <option value="">All countries</option>
+          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="table-count">{filtered.length} of {allLakes.length} lakes</span>
       </div>
       <div className="table-wrap">
         <table>
           <thead><tr>
             <Th col="name">Name</Th>
             <Th col="tile">Region</Th>
+            <Th col="country">Country</Th>
             <Th col="elev" right>Elev (m)</Th>
             <Th col="area" right>Area (ha)</Th>
             <Th col="chg"  right>Growth % (5+ seasons)</Th>
@@ -657,6 +715,7 @@ function LakesView({ lakes, onSelectLake }) {
               <tr key={l.id} onClick={()=>onSelectLake(l)}>
                 <td style={{fontWeight:500}}>{l.name}</td>
                 <td className="mono">{TILE_LABELS[l.tile]||l.tile}</td>
+                <td className="mono">{l.country||"—"}</td>
                 <td className="num">{fmt(l.elev,0)}</td>
                 <td className="num">{fmt(l.area,1)}</td>
                 <td className="num" style={{color:l.chg>15?"var(--high)":l.chg<-10?"var(--success)":"inherit"}}>
@@ -821,6 +880,9 @@ function App() {
   }, []);
 
   const alerts = useMemo(() => lakes.filter(l => l.sev), [lakes]);
+  // Alert-status and country filters, shared by the map and the lake list
+  const [filters, setFilters] = useState({ sev: null, country: null });
+  const shown = useMemo(() => applyFilters(lakes, filters), [lakes, filters]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
@@ -845,9 +907,9 @@ function App() {
       <div className="body">
         <Sidebar view={view} onView={handleViewChange} alerts={alerts}/>
         <div className="content">
-          <MapView active={view==="map"} lakes={lakes} onSelectLake={handleSelect} selectedLake={selected}/>
+          <MapView active={view==="map"} lakes={shown} allLakes={lakes} filters={filters} setFilters={setFilters} onSelectLake={handleSelect} selectedLake={selected}/>
           {view==="overview" && <OverviewView lakes={lakes} alerts={alerts} onSelectLake={handleSelect}/>}
-          {view==="lakes"    && <LakesView    lakes={lakes}                  onSelectLake={handleSelect}/>}
+          {view==="lakes"    && <LakesView    lakes={shown} allLakes={lakes} filters={filters} setFilters={setFilters} onSelectLake={handleSelect}/>}
           {view==="alerts"   && <AlertsView   alerts={alerts}                onSelectLake={handleSelect}/>}
           <DetailPanel lake={selected} onClose={()=>setSelected(null)}/>
         </div>

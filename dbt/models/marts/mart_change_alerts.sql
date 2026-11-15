@@ -15,6 +15,7 @@
 
 select
     lake_id,
+    country,
     name,
     name_hint,
     tile,

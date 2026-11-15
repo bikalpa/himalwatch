@@ -73,6 +73,7 @@ joined as (
         l.mean_elevation,
         l.geometry_wkt,
         l.in_nepal,
+        l.country,
         l.name,
         l.name_hint,
 
